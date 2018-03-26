@@ -4,7 +4,7 @@ import re
 import sys
 
 from .._globals import IDENTITY, GLOBAL_LOCKER
-from .._compat import PY2, integer_types, basestring
+from .._compat import PY2, integer_types, basestring, to_bytes, to_native
 from ..connection import ConnectionPool
 from ..objects import Field, Query, Expression
 from ..helpers.classes import SQLALL
@@ -408,7 +408,7 @@ class IMAPAdapter(NoSQLAdapter):
         x = 0
         for item in mailboxes_list[1]:
             x = x + 1
-            item = item.strip()
+            item = to_native(item.strip())
             if not "NOSELECT" in item.upper():
                 sub_items = item.split("\"")
                 sub_items = [sub_item for sub_item in sub_items \
