@@ -36,7 +36,7 @@ class Postgre(
     REGEX_URI = re.compile(
         '^(?P<user>[^:@]+)(\:(?P<password>[^@]*))?@(?P<host>\[[^/]+\]|' +
         '[^\:@]*)(\:(?P<port>[0-9]+))?/(?P<db>[^\?]+)' +
-        '(\?sslmode=(?P<sslmode>.+))?(\?unix_socket=(?P<socket>.+))?$')
+        '(\?sslmode=(?P<sslmode>.+))?(\?unix_socket=(?P<socket>.+))?(\?application_name=(?P<appname>.+))?$')
 
     def __init__(self, db, uri, pool_size=0, folder=None, db_codec='UTF-8',
                  credential_decoder=IDENTITY, driver_args={},
@@ -68,6 +68,8 @@ class Postgre(
             raise SyntaxError('Database name required')
         port = int(m.group('port') or '5432')
         sslmode = m.group('sslmode')
+        appname = m.group('appname')
+        if appname: self.driver_args.update(application_name=appname)
         if socket:
             self.driver_args.update(user=user, host=socket, port=port, password=password)
             if db:
