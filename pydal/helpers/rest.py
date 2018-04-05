@@ -175,7 +175,7 @@ class RestParser(object):
                         elif tokens[2] == 'startswith':
                             query = self.db[table][field].startswith(args[i])
                         elif tokens[2] == 'contains':
-                            query = self.db[table][field].contains(args[i])
+                            query = self.db[table][field].cast('text').contains(args[i])
                         else:
                             raise RuntimeError("invalid pattern: %s" % pattern)
                         if len(tokens) == 4 and tokens[3] == 'not':

@@ -235,17 +235,17 @@ def smart_query(fields, text):
             elif op == 'belongs': new_query = field.belongs(value.split(','))
             elif op == 'notbelongs': new_query = ~field.belongs(value.split(','))
             elif field.type == 'list:string':
-                if op == 'contains': new_query = field.contains(value)
+                if op == 'contains': new_query = field.cast('text').contains(value)
                 else: raise RuntimeError("Invalid operation")
             elif field.type in ('text', 'string', 'json', 'upload'):
-                if op == 'contains': new_query = field.contains(value)
+                if op == 'contains': new_query = field.cast('text').contains(value)
                 elif op == 'like': new_query = field.ilike(value)
                 elif op == 'startswith': new_query = field.startswith(value)
                 elif op == 'endswith': new_query = field.endswith(value)
                 else: raise RuntimeError("Invalid operation")
             elif field._db._adapter.dbengine=='google:datastore' and \
                  field.type in ('list:integer', 'list:string', 'list:reference'):
-                if op == 'contains': new_query = field.contains(value)
+                if op == 'contains': new_query = field.cast('text').contains(value)
                 else: raise RuntimeError("Invalid operation")
             else: raise RuntimeError("Invalid operation")
             if neg: new_query = ~new_query
