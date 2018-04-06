@@ -36,7 +36,7 @@ class Serializers(object):
         raise NotImplementedError("No "+str(name)+" serializer available.")
 
     def json(self, value):
-        value = jsonlib.dumps(value, default=self._json_parse)
+        value = jsonlib.dumps(value, default=self._json_parse, ensure_ascii=False)
         rep28 = r'\u2028'
         rep29 = r'\2029'
         if PY2:
