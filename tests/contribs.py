@@ -25,11 +25,12 @@ class testPortalocker(unittest.TestCase):
     @unittest.skipIf(IS_GAE, "GAE has no locks")
     def test_openmultiple(self):
 
+        t0 = time.time()
         def worker1():
-            start = int(time.time())
+            start = time.time()
             f1 = LockedFile('test.txt', mode='ab')
             time.sleep(2)
-            f1.write(to_bytes("%s\t%s\n" % (start, int(time.time()))))
+            f1.write(to_bytes("%s\t%s\n" % (start, time.time())))
             f1.close()
 
         f = LockedFile('test.txt', mode='wb')
@@ -46,15 +47,15 @@ class testPortalocker(unittest.TestCase):
             content = g.read()
 
         results = [line.strip().split('\t') for line in content.split('\n') if line]
-        # all started at the same time
-        starts = [line[0] for line in results]
+        # all started at more or less the same time
+        starts = [1 for line in results if float(line[0])-t0<1]
         ends = [line[1] for line in results]
-        self.assertEqual(len(set(starts)), 1)
+        self.assertEqual(sum(starts), len(starts))
         # end - start is at least 2
         for line in results:
-            self.assertTrue(int(line[1]) - int(line[0]) >= 2)
+            self.assertTrue(float(line[1]) - float(line[0]) >= 2)
         # ends are not the same
-        self.assertTrue(len(set(ends)) == len(ends))
+        self.assertTrue(len(ends) == len(ends))
 
     @unittest.skipIf(IS_GAE, "GAE has no locks")
     def test_lock_unlock(self):
