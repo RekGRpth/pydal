@@ -339,7 +339,7 @@ class DAL(with_metaclass(MetaDAL, Serializable, BasicStorage)):
         keys = ['%s.%i' % (thread_key, i) for (i, db) in instances]
         instances = enumerate(instances)
         for (i, db) in instances:
-            if not db._adapter.support_distributed_transaction():
+            if not db._adapter.support_distributed_transaction:
                 raise SyntaxError(
                     'distributed transaction not suported by %s' % db._dbname)
         for (i, db) in instances:
@@ -354,7 +354,7 @@ class DAL(with_metaclass(MetaDAL, Serializable, BasicStorage)):
             socket.gethostname(), threading.currentThread())
         keys = ['%s.%i' % (thread_key, i) for (i, db) in instances]
         for (i, db) in instances:
-            if not db._adapter.support_distributed_transaction():
+            if not db._adapter.support_distributed_transaction:
                 raise SyntaxError(
                     'distributed transaction not suported by %s' % db._dbanme)
         try:
