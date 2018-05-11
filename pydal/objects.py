@@ -563,8 +563,8 @@ class Table(Serializable, BasicStorage):
                     for_update=for_update,
                     orderby=orderby,
                     orderby_on_limitby=False).first()
-            elif not str(key).isdigit():
-                record = None
+#            elif not str(key).isdigit():
+#                record = None
             else:
                 record = self._db(self._id == key).select(
                     limitby=(0, 1),
