@@ -306,6 +306,7 @@ class _repr_ref_list(_repr_ref):
     def __call__(self, value, row=None):
         if not value:
             return None
+        if not hasattr(value, '__iter__'): value = [value]
         refs = None
         db, id = self.ref._db, self.ref._id
         if db._adapter.dbengine == 'google:datastore':
