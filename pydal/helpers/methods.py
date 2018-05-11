@@ -323,6 +323,8 @@ class _repr_ref_list(_repr_ref):
 def auto_represent(field):
     if field.represent:
         return field.represent
+    if field.db and field.type.startswith('reference') and hasattr(field, 'referent') and field.referent is not None: return _repr_ref(field.referent.table)
+    if field.db and field.type.startswith('list:reference') and hasattr(field, 'referent') and field.referent is not None: return _repr_ref_list(field.referent.table)
     if field.db and field.type.startswith('reference') and \
             field.type.find('.') < 0 and field.type[10:] in field.db.tables:
         referenced = field.db[field.type[10:]]
