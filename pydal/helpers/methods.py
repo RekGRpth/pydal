@@ -283,7 +283,7 @@ def auto_validators(field):
 
 
 def _fieldformat(r, id):
-    row = r(id=id)
+    row = r(id)
     if not row:
         return str(id)
     elif hasattr(r, '_format') and isinstance(r._format, str):
