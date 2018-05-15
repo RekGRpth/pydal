@@ -1644,7 +1644,9 @@ class TestClientLevelOps(DALtest):
 
     def testRun(self):
         db = self.connect()
-        db.define_table('tt', Field('aa', represent=lambda x,r:'x'+x),
+        db.define_table(
+            'tt', 
+            Field('aa', represent=lambda x,r:'x'+x),
             Field('bb', type='integer', represent=lambda x,r:'y'+str(x)))
         db.commit()
         db.tt.insert(aa="test", bb=1)
@@ -1654,16 +1656,18 @@ class TestClientLevelOps(DALtest):
         rows1 = db(db.tt.id>0).select()
         rows2 = db(db.tt.id>0).select()
         self.assertEqual(rows1, rows2)
-        rows3 = rows1 & rows2
+        rows3 = rows1 + rows2
         self.assertEqual(len(rows3), 2)
         rows4 = rows1 | rows2
         self.assertEqual(len(rows4), 1)
-        rows5 = rows1.find(lambda row: row.aa=="test")
+        rows5 = rows1 & rows2
         self.assertEqual(len(rows5), 1)
-        rows6 = rows2.exclude(lambda row: row.aa=="test")
+        rows6 = rows1.find(lambda row: row.aa=="test")
         self.assertEqual(len(rows6), 1)
-        rows7 = rows5.sort(lambda row: row.aa)
+        rows7 = rows2.exclude(lambda row: row.aa=="test")
         self.assertEqual(len(rows7), 1)
+        rows8 = rows5.sort(lambda row: row.aa)
+        self.assertEqual(len(rows8), 1)
         def represent(f, v, r):
             return 'z' + str(v)
 
