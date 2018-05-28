@@ -234,6 +234,7 @@ class Table(Serializable, BasicStorage):
         super(Table, self).__init__()
         self._actual = False  # set to True by define_table()
         self._db = db
+        self._migrate = None
         self._tablename = self._dalname = tablename
         if not isinstance(tablename, str) or hasattr(DAL, tablename) or not \
            REGEX_VALID_TB_FLD.match(tablename) or \
@@ -397,7 +398,9 @@ class Table(Serializable, BasicStorage):
                                   archive_name='%(tablename)s_archive',
                                   is_active='is_active',
                                   current_record='current_record',
-                                  current_record_label=None):
+                                  current_record_label=None,
+                                  migrate=None,
+                                  redefine=None):
         db = self._db
         archive_db = archive_db or db
         archive_name = archive_name % dict(tablename=self._dalname)
@@ -412,10 +415,20 @@ class Table(Serializable, BasicStorage):
             clones.append(
                 field.clone(unique=False, type=field.type if nfk else 'bigint')
                 )
+        
+        d = dict(format=self._format)
+        if migrate:
+            d['migrate'] = migrate
+        elif isinstance(self._migrate, basestring):
+            d['migrate'] = self._migrate+'_archive'
+        elif self._migrate:
+            d['migrate'] = self._migrate
+        if redefine:
+            d['redefine'] = redefine
         archive_db.define_table(
             archive_name,
-            Field(current_record, field_type, label=current_record_label),
-            *clones, **dict(format=self._format))
+            Field(current_record, field_type, label=current_record_label), 
+            *clones, **d)
 
         self._before_update.append(
             lambda qset, fs, db=archive_db, an=archive_name, cn=current_record:
@@ -434,7 +447,7 @@ class Table(Serializable, BasicStorage):
                 self._common_filter = lambda q: reduce(
                     AND, [query(q), newquery(q)])
             else:
-                self._common_filter = newquery
+                self._common_filter = newquery 
 
     def _validate(self, **vars):
         errors = Row()
