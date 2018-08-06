@@ -865,9 +865,10 @@ class DAL(with_metaclass(MetaDAL, Serializable, BasicStorage)):
                 continue
             elif line == 'END':
                 return
-            elif not line.startswith('TABLE ') or \
-                    not line[6:] in self.tables:
-                raise SyntaxError('invalid file format')
+            elif not line.startswith('TABLE ') :
+                raise SyntaxError('Invalid file format')
+            elif  not line[6:] in self.tables:
+                raise SyntaxError('Unknown table : %s' % line[6:])
             else:
                 tablename = line[6:]
                 tablename = map_tablenames.get(tablename,tablename)
