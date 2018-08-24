@@ -2,6 +2,7 @@
 
 import base64
 import cgi
+import codecs
 import copy
 import csv
 import datetime
@@ -924,7 +925,7 @@ class Table(Serializable, BasicStorage):
         if restore:
             self._db[self].truncate()
 
-        reader = csv.reader(csvfile, delimiter=delimiter,
+        reader = csv.reader(codecs.iterdecode(csvfile, 'utf-8'), delimiter=delimiter,
                             quotechar=quotechar, quoting=quoting)
         colnames = None
         if isinstance(id_map, dict):
