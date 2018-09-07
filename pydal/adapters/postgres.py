@@ -5,7 +5,7 @@ from ..drivers import psycopg2_adapt
 from ..helpers.classes import ConnectionConfigurationMixin
 from .base import SQLAdapter
 from . import AdapterMeta, adapters, with_connection, with_connection_or_raise
-
+from distutils.version import LooseVersion
 
 class PostgreMeta(AdapterMeta):
     def __call__(cls, *args, **kwargs):
@@ -152,11 +152,11 @@ class PostgrePsyco(Postgre):
     drivers = ('psycopg2',)
 
     def _config_json(self):
-        use_json = self.driver.__version__ >= "2.0.12" and \
+        use_json = LooseVersion(self.driver.__version__) >= LooseVersion("2.0.12") and \
             self.connection.server_version >= 90200
         if use_json:
             self.dialect = self._get_json_dialect()(self)
-            if self.driver.__version__ >= '2.5.0':
+            if LooseVersion(self.driver.__version__) >= LooseVersion('2.5.0'):
                 self.parser = self._get_json_parser()(self)
 
     def adapt(self, obj):
@@ -176,9 +176,9 @@ class PostgrePG8000(Postgre):
     drivers = ('pg8000',)
 
     def _config_json(self):
-        if self.connection._server_version >= "9.2.0":
+        if LooseVersion(self.connection._server_version) >= "9.2.0":
             self.dialect = self._get_json_dialect()(self)
-            if self.driver.__version__ >= '1.10.2':
+            if LooseVersion(self.driver.__version__) >= '1.10.2':
                 self.parser = self._get_json_parser()(self)
 
     def adapt(self, obj):
@@ -281,6 +281,6 @@ class JDBCPostgre(Postgre):
         self.execute("SET CLIENT_ENCODING TO 'UNICODE';")
 
     def _config_json(self):
-        use_json = self.connection.dbversion >= "9.2.0"
+        use_json = LooseVersion(self.connection.dbversion) >= LooseVersion("9.2.0")
         if use_json:
             self.dialect = self._get_json_dialect()(self)
