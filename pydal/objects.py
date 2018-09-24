@@ -3079,7 +3079,7 @@ class IterRows(BasicRows):
         except StopIteration:
             # Iterator is over, adjust the cursor logic
             self.db._adapter.close_cursor(self.cursor)
-            raise StopIteration
+#            raise StopIteration
         return
 
     def first(self):
