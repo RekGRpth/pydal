@@ -33,13 +33,13 @@ class PostgreDialect(SQLDialect):
     @sqltype_for('big-reference')
     def type_big_reference(self):
         return 'BIGINT REFERENCES %(foreign_key)s ' + \
-            'ON DELETE %(on_delete_action)s %(null)s %(unique)s'
+            'ON DELETE %(on_delete_action)s ON UPDATE %(on_update_action)s %(null)s %(unique)s'
 
     @sqltype_for('reference TFK')
     def type_reference_tfk(self):
         return ' CONSTRAINT "FK_%(constraint_name)s_PK" FOREIGN KEY ' + \
             '(%(field_name)s) REFERENCES %(foreign_table)s' + \
-            '(%(foreign_key)s) ON DELETE %(on_delete_action)s'
+            '(%(foreign_key)s) ON DELETE %(on_delete_action)s ON UPDATE %(on_update_action)s'
 
     @sqltype_for('geometry')
     def type_geometry(self):

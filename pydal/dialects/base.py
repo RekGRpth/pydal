@@ -108,7 +108,7 @@ class SQLDialect(CommonDialect):
     @sqltype_for('reference')
     def type_reference(self):
         return 'INTEGER REFERENCES %(foreign_key)s ' + \
-            'ON DELETE %(on_delete_action)s %(null)s %(unique)s'
+            'ON DELETE %(on_delete_action)s ON UPDATE %(on_update_action)s %(null)s %(unique)s'
 
     @sqltype_for('list:integer')
     def type_list_integer(self):
@@ -134,7 +134,7 @@ class SQLDialect(CommonDialect):
     def type_reference_fk(self):
         return ', CONSTRAINT  "FK_%(constraint_name)s" FOREIGN KEY ' + \
             '(%(field_name)s) REFERENCES %(foreign_key)s ' + \
-            'ON DELETE %(on_delete_action)s'
+            'ON DELETE %(on_delete_action)s ON UPDATE %(on_update_action)s'
 
     def alias(self, original, new):
         return ('%s AS ' + self.quote_template) % (original, new)

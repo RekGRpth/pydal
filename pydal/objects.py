@@ -1610,7 +1610,7 @@ class Field(Expression, Serializable):
     """
 
     def __init__(self, fieldname, type='string', length=None, default=DEFAULT,
-                 required=False, requires=DEFAULT, ondelete='CASCADE',
+                 required=False, requires=DEFAULT, ondelete='CASCADE', onupdate='CASCADE',
                  notnull=False, unique=False, uploadfield=True, widget=None,
                  label=None, comment=None,
                  writable=True, readable=True,
@@ -1649,6 +1649,7 @@ class Field(Expression, Serializable):
         self.default = default if default != DEFAULT else (update or None)
         self.required = required  # is this field required
         self.ondelete = ondelete.upper()  # this is for reference fields only
+        self.onupdate = onupdate.upper()  # this is for reference fields only
         self.notnull = notnull
         self.unique = unique
         # split to deal with decimal(,)
@@ -1885,7 +1886,7 @@ class Field(Expression, Serializable):
 
     def as_dict(self, flat=False, sanitize=True):
         attrs = (
-            'name', 'authorize', 'represent', 'ondelete',
+            'name', 'authorize', 'represent', 'ondelete', 'onupdate',
             'custom_store', 'autodelete', 'custom_retrieve',
             'filter_out', 'uploadseparate', 'widget', 'uploadfs',
             'update', 'custom_delete', 'uploadfield', 'uploadfolder',

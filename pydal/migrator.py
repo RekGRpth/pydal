@@ -96,7 +96,8 @@ class Migrator(object):
                                 foreign_key=fk,
                                 table_name=table._rname,
                                 field_name=field._rname,
-                                on_delete_action=field.ondelete)
+                                on_delete_action=field.ondelete,
+                                on_update_action=field.onupdate)
                 else:
                     # make a guess here for circular references
                     if referenced in db:
@@ -124,7 +125,8 @@ class Migrator(object):
                         constraint_name=self.dialect.quote(constraint_name),
                         foreign_key='%s (%s)' % (
                             real_referenced, rfield._rname),
-                        on_delete_action=field.ondelete)
+                        on_delete_action=field.ondelete,
+                        on_update_action=field.onupdate)
                     ftype_info['null'] = ' NOT NULL' if field.notnull else \
                         self.dialect.allow_null
                     ftype_info['unique'] = ' UNIQUE' if field.unique else ''
@@ -224,8 +226,11 @@ class Migrator(object):
             constraint_name = self.dialect.constraint_name(
                 table._raw_rname, '_'.join(f._raw_rname for f in fk_fields))
             on_delete = list(set(f.ondelete for f in fk_fields))
+            on_update = list(set(f.onupdate for f in fk_fields))
             if len(on_delete) > 1:
                 raise SyntaxError('Table %s has incompatible ON DELETE actions in multi-field foreign key.' % table._dalname)
+            if len(on_update) > 1:
+                raise SyntaxError('Table %s has incompatible ON UPDATE actions in multi-field foreign key.' % table._dalname)
             fields = fields + ',\n    ' + \
                 types['reference TFK'] % dict(
                     constraint_name=constraint_name,
@@ -233,7 +238,8 @@ class Migrator(object):
                     field_name=', '.join(fkeys),
                     foreign_table=rtable._rname,
                     foreign_key=', '.join(pkeys),
-                    on_delete_action=on_delete[0])
+                    on_delete_action=on_delete[0],
+                    on_update_action=on_update[0])
 
         if getattr(table, '_primarykey', None):
             query = "CREATE TABLE %s(\n    %s,\n    %s) %s" % \
