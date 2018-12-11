@@ -533,7 +533,7 @@ class Table(Serializable, BasicStorage):
         return query
 
     def __getitem__(self, key):
-        if not key:
+        if key is None:
             return None
         elif isinstance(key, dict):
             """ for keyed table """
@@ -599,7 +599,9 @@ class Table(Serializable, BasicStorage):
             return None
 
     def __setitem__(self, key, value):
-        if isinstance(key, dict) and isinstance(value, dict):
+        if key is None:
+            self.insert(**self._filter_fields(value))
+        elif isinstance(key, dict) and isinstance(value, dict):
             """ option for keyed table """
             if set(key.keys()) == set(self._primarykey):
                 value = self._filter_fields(value)
@@ -612,12 +614,9 @@ class Table(Serializable, BasicStorage):
             else:
                 raise SyntaxError(
                     'key must have all fields from primary key: %s' %
-                    self._primarykey)
+                    self._primarykey)        
         elif str(key).isdigit():
-            if key == 0:
-                self.insert(**self._filter_fields(value))
-            elif self._db(self._id == key)\
-                    .update(**self._filter_fields(value)) is None:
+            if not self._db(self._id == key).update(**self._filter_fields(value)):
                 raise SyntaxError('No such record: %s' % key)
         else:
             if isinstance(key, dict):
@@ -643,8 +642,7 @@ class Table(Serializable, BasicStorage):
             query = self._build_query(key)
             if not self._db(query).delete():
                 raise SyntaxError('No such record: %s' % key)
-        elif not str(key).isdigit() or \
-                not self._db(self._id == key).delete():
+        elif not str(key).isdigit() or not self._db(self._id == key).delete():
             raise SyntaxError('No such record: %s' % key)
 
     def __iter__(self):
