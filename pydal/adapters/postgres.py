@@ -189,9 +189,9 @@ class PostgrePG8000(Postgre):
     drivers = ('pg8000',)
 
     def _config_json(self):
-        if LooseVersion(self.connection._server_version) >= "9.2.0":
+        if LooseVersion(self.connection._server_version) >= LooseVersion("9.2.0"):
             self.dialect = self._get_json_dialect()(self)
-            if LooseVersion(self.driver.__version__) >= '1.10.2':
+            if LooseVersion(self.driver.__version__) >= LooseVersion('1.10.2'):
                 self.parser = self._get_json_parser()(self)
 
     def adapt(self, obj):
