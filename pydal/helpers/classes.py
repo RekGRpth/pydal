@@ -2,7 +2,7 @@
 import copy
 import marshal
 import struct
-import multiprocessing_utils
+import threading
 import time
 import traceback
 
@@ -172,7 +172,7 @@ class OpRow(object):
 
 class ConnectionConfigurationMixin(object):
     def _mock_reconnect(self):
-        self._reconnect_lock = multiprocessing_utils.SharedRLock()
+        self._reconnect_lock = threading.RLock()
         self._connection_reconnect = self.reconnect
         self.reconnect = self._reconnect_and_configure
         self._reconnect_mocked = True
