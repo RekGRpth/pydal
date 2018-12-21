@@ -1,7 +1,7 @@
-import threading
+import multiprocessing_utils
 
-GLOBAL_LOCKER = threading.RLock()
-THREAD_LOCAL = threading.local()
+GLOBAL_LOCKER = multiprocessing_utils.SharedRLock()
+THREAD_LOCAL = multiprocessing_utils.local()
 
 DEFAULT = lambda: None
 
