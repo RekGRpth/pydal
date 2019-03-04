@@ -2589,9 +2589,25 @@ class BasicRows(object):
 
     @property
     def colnames_fields(self):
+        """
+        Returns the list of fields matching colnames, possibly
+        including virtual fields (i.e. Field.Virtual and
+        Field.Method instances).
+        Use this property instead of plain fields attribute
+        whenever you have an entry in colnames which references
+        a virtual field, and you still need a correspondance
+        between column names and fields.
+
+        NOTE that references to the virtual fields must have been
+             **forced** in some way within colnames, because in the general
+             case it is not possible to have them as a result of a select.
+        """
         colnames = self.colnames
+        # instances of Field or Expression only are allowed in fields
         plain_fields = self.fields
         if len(colnames) > len(plain_fields):
+            # correspondance between colnames and fields is broken,
+            # search for missing virtual fields
             fields = []; fi = 0
             for col in colnames:
                 m = re.match(REGEX_TABLE_DOT_FIELD_OPTIONAL_QUOTES, col)
@@ -3107,7 +3123,7 @@ class IterRows(BasicRows):
         except StopIteration:
             # Iterator is over, adjust the cursor logic
             self.db._adapter.close_cursor(self.cursor)
-#            raise StopIteration
+            return
         return
 
     def first(self):
@@ -3115,7 +3131,6 @@ class IterRows(BasicRows):
             try:
                 self._head = next(self)
             except StopIteration:
-                # TODO should I raise something?
                 return None
         return self._head
 
