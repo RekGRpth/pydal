@@ -20,14 +20,16 @@ if PY2:
     import urllib2
     import Queue
     import ConfigParser as configparser
+    from .contrib import ipaddress
     from email.MIMEBase import MIMEBase
     from email.Header import Header
     from email import Encoders, Charset
     from email.MIMEMultipart import MIMEMultipart
     from email.MIMEText import MIMEText
     from email.Charset import add_charset, QP as charset_QP
-    from urllib import FancyURLopener, urlencode, urlopen
+    from urllib import FancyURLopener, urlencode
     from urllib import quote as urllib_quote, unquote as urllib_unquote, quote_plus as urllib_quote_plus
+    from urllib2 import urlopen
     from string import maketrans
     from types import ClassType
     import cgi
@@ -89,6 +91,7 @@ else:
     import _thread as thread
     import configparser
     import queue as Queue
+    import ipaddress
     from email.mime.base import MIMEBase
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
@@ -152,7 +155,7 @@ def with_metaclass(meta, *bases):
 def to_unicode(obj, charset='utf-8', errors='strict'):
     if obj is None:
         return None
-    if not isinstance(obj, bytes):
+    if not hasattr(obj, 'decode') or not callable(obj.decode):
         return text_type(obj)
     return obj.decode(charset, errors)
 
