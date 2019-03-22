@@ -136,7 +136,8 @@ class Validator(object):
         """
         return value
 
-    def validate(self, value):
+    @staticmethod
+    def validate(value):
         raise NotImplementedError
 
     def __call__(self, value):
@@ -144,6 +145,15 @@ class Validator(object):
             return self.validate(value), None
         except ValidationError as e:
             return value, e.message
+
+
+def validator_caller(func, value):
+    if getattr(func, 'validate', None) is Validator.validate:
+        return func.validate(value)
+    value, error = func(value)
+    if error is not None:
+        raise ValidationError(error)
+    return value
 
 
 class IS_MATCH(Validator):
@@ -673,12 +683,12 @@ class IS_IN_DB(Validator):
             if self.theset:
                 if str(value) in self.theset:
                     if self._and:
-                        return self._and.validate(value)
+                        return validator_caller(self._and, value)
                     return value
             else:
                 if self.dbset(field == value).count():
                     if self._and:
-                        return self._and.validate(value)
+                        return validator_caller(self._and, value)
                     return value
         raise ValidationError(self.translator(self.error_message))
 
@@ -2534,7 +2544,7 @@ class IS_LIST_OF(Validator):
             for item in ivalue:
                 v = item
                 for validator in other:
-                    v = validator.validate(v)
+                    v = validator_caller(validator, v)
                 new_value.append(v)
             ivalue = new_value
         return ivalue
@@ -2749,9 +2759,9 @@ class IS_EMPTY_OR(Validator):
             return self.null
         if isinstance(self.other, (list, tuple)):
             for item in self.other:
-                value = item.validate(value)
+                value = validator_caller(item, value)
             return value
-        return self.other.validate(value)
+        return validator_caller(self.other, value)
 
     def formatter(self, value):
         if hasattr(self.other, 'formatter'):
@@ -2782,7 +2792,7 @@ class CLEANUP(Validator):
 
 
 def pbkdf2_hex(data, salt, iterations=1000, keylen=24, hashfunc=None):
-    hashfunc = hashfunc or sha1
+    hashfunc = hashfunc or hashlib.sha1
     hmac = hashlib.pbkdf2_hmac(hashfunc().name, to_bytes(data),
                                to_bytes(salt), iterations, keylen)
     return binascii.hexlify(hmac)

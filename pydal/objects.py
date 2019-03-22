@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# pylint: disable=no-member,not-an-iterable
 
 import base64
 import cgi
@@ -23,7 +24,7 @@ from ._gae import Key
 from .exceptions import NotFoundException, NotAuthorizedException
 from .helpers.regex import (
     REGEX_TABLE_DOT_FIELD, REGEX_ALPHANUMERIC, REGEX_PYTHON_KEYWORDS,
-    REGEX_STORE_PATTERN, REGEX_UPLOAD_PATTERN, REGEX_CLEANUP_FN,
+    REGEX_UPLOAD_EXTENSION, REGEX_UPLOAD_PATTERN, REGEX_UPLOAD_CLEANUP,
     REGEX_VALID_TB_FLD, REGEX_TYPE, REGEX_TABLE_DOT_FIELD_OPTIONAL_QUOTES
 )
 from .helpers.classes import (
@@ -61,7 +62,8 @@ class Row(BasicStorage):
 
     def __getitem__(self, k):
         key = str(k)
-        _extra = super(Row, self).get('_extra', None)
+
+        _extra = BasicStorage.get(self, '_extra', None)
         if _extra is not None:
             v = _extra.get(key, DEFAULT)
             if v is not DEFAULT:
@@ -74,23 +76,20 @@ class Row(BasicStorage):
 
         m = REGEX_TABLE_DOT_FIELD.match(key)
         if m:
+            key2 = m.group(2)
             try:
-                e = super(Row, self).__getitem__(m.group(1))
-                return e[m.group(2)]
+                return BasicStorage.__getitem__(self, m.group(1))[key2]
             except (KeyError, TypeError):
                 pass
-            key = m.group(2)
             try:
-                return super(Row, self).__getitem__(key)
+                return BasicStorage.__getitem__(self, key2)
             except KeyError:
                 pass
-        try:
-            e = super(Row, self).get('__get_lazy_reference__')
-            if e is not None and callable(e):
-                self[key] = e(key)
-                return self[key]
-        except Exception as e:
-            raise e
+
+        lg = BasicStorage.get(self, '__get_lazy_reference__', None)
+        if callable(lg):
+            v = self[key] = lg(key)
+            return v
 
         raise KeyError(key)
 
@@ -163,7 +162,7 @@ class Row(BasicStorage):
                     indent,
                     field)
             elif not callable(row):
-                if REGEX_ALPHANUMERIC.match(field):
+                if re.match(REGEX_ALPHANUMERIC, field):
                     return '%s<%s>%s</%s>' % (indent, field, row, field)
                 else:
                     return '%s<extra name="%s">%s</extra>' % \
@@ -1838,8 +1837,8 @@ class Field(Expression, Serializable):
             filename = file.name
         filename = os.path.basename(
             filename.replace('/', os.sep).replace('\\', os.sep))
-        m = REGEX_STORE_PATTERN.search(filename)
-        extension = m and m.group('e') or 'txt'
+        m = re.search(REGEX_UPLOAD_EXTENSION, filename)
+        extension = m and m.group(1) or 'txt'
         uuid_key = self._db.uuid().replace('-', '')[-16:]
         encoded_filename = to_native(
             base64.b16encode(to_bytes(filename)).lower())
@@ -1923,7 +1922,7 @@ class Field(Expression, Serializable):
         return (filename, stream)
 
     def retrieve_file_properties(self, name, path=None):
-        m = REGEX_UPLOAD_PATTERN.match(name)
+        m = re.match(REGEX_UPLOAD_PATTERN, name)
         if not m or not self.isattachment:
             raise TypeError('Can\'t retrieve %s file properties' % name)
         self_uploadfield = self.uploadfield
@@ -1932,7 +1931,7 @@ class Field(Expression, Serializable):
         if m.group('name'):
             try:
                 filename = base64.b16decode(m.group('name'), True).decode('utf-8')
-                filename = REGEX_CLEANUP_FN.sub('_', filename)
+                filename = re.sub(REGEX_UPLOAD_CLEANUP, '_', filename)
             except (TypeError, AttributeError):
                 filename = name
         else:
@@ -2460,7 +2459,9 @@ class Set(Serializable):
 
 class LazyReferenceGetter(object):
     def __init__(self, table, id):
-        self.db, self.tablename, self.id = table._db, table._tablename, id
+        self.db = table._db
+        self.tablename = table._tablename
+        self.id = id
 
     def __call__(self, other_tablename):
         if self.db._lazy_tables is False:
