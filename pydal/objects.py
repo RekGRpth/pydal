@@ -17,7 +17,7 @@ from collections import OrderedDict
 from ._compat import (
     PY2, StringIO, BytesIO, pjoin, exists, hashlib_md5, basestring, iteritems,
     xrange, implements_iterator, implements_bool, copyreg, reduce, to_bytes,
-    to_native, long, text_type
+    to_native, to_unicode, long, text_type
 )
 from ._globals import DEFAULT, IDENTITY, AND, OR
 from ._gae import Key
@@ -33,12 +33,14 @@ from .helpers.classes import (
 )
 from .helpers.methods import (
     list_represent, bar_decode_integer, bar_decode_string, bar_encode,
-    archive_record, cleanup, use_common_filters, pluralize,
+    archive_record, cleanup, use_common_filters,
     attempt_upload_on_insert, attempt_upload_on_update, delete_uploaded_files
 )
 from .helpers.serializers import serializers
 from .utils import deprecated
 
+if not PY2:
+    unicode = str
 
 DEFAULTLENGTH = {'string': 512, 'password': 512, 'upload': 512, 'text': 2**15, 'blob': 2**31}
 
@@ -52,6 +54,14 @@ DEFAULT_REGEX = {
     'time':    '\d{2}\:\d{2}(\:\d{2}(\.\d*)?)?',
     'datetime':'\d{4}\-\d{2}\-\d{2} \d{2}\:\d{2}(\:\d{2}(\.\d*)?)?',
     }
+
+
+def csv_reader(utf8_data, dialect=csv.excel, encoding='utf-8', **kwargs):
+    """like csv.reader but allows to specify an encoding, defaults to utf-8"""
+    csv_reader = csv.reader(utf8_data, dialect=dialect, **kwargs)
+    for row in csv_reader:
+        yield [to_unicode(cell, encoding) for cell in row]
+
 
 class Row(BasicStorage):
 
@@ -250,8 +260,7 @@ class Table(Serializable, BasicStorage):
         self._format = args.get('format')
         self._singular = args.get(
             'singular', tablename.replace('_', ' ').capitalize())
-        self._plural = args.get(
-            'plural', pluralize(self._singular.lower()).capitalize())
+        self._plural = args.get('plural')
         # horrible but for backward compatibility of appadmin
         if 'primarykey' in args and args['primarykey'] is not None:
             self._primarykey = args.get('primarykey')
@@ -881,6 +890,7 @@ class Table(Serializable, BasicStorage):
                              id_offset = None,  # id_offset used only when id_map is None
                              transform = None,
                              validate=False,
+                             encoding='utf-8',
                              **kwargs
                              ):
         """
@@ -912,7 +922,7 @@ class Table(Serializable, BasicStorage):
         if restore:
             self._db[self].truncate()
 
-        reader = csv.reader(codecs.iterdecode(csvfile, 'utf-8'), delimiter=delimiter,
+        reader = csv_reader(csvfile, delimiter=delimiter, encoding=encoding,
                             quotechar=quotechar, quoting=quoting)
         colnames = None
         if isinstance(id_map, dict):
@@ -1487,6 +1497,10 @@ class Expression(object):
         return Expression(
             self.db, self._dialect.st_astext, self, type='string')
 
+    def st_aswkb(self):
+        return Expression(
+            self.db, self._dialect.st_aswkb, self, type='string')
+
     def st_x(self):
         return Expression(self.db, self._dialect.st_x, self, type='string')
 
@@ -1505,6 +1519,10 @@ class Expression(object):
         return Expression(
             self.db, self._dialect.st_simplifypreservetopology, self, value,
             self.type)
+
+    def st_transform(self, value):
+        return Expression(
+            self.db, self._dialect.st_transform, self, value, self.type)
 
     # GIS queries
 
@@ -1634,7 +1652,7 @@ class FieldVirtual(object):
         # for backward compatibility
         (self.name, self.f) = (name, f) if f else ('unknown', name)
         self.type = ftype
-        self.label = label or self.name.capitalize().replace('_', ' ')
+        self.label = label or self.name.replace('_', ' ').title()
         self.represent = lambda v, r=None: v
         self.formatter = IDENTITY
         self.comment = None
@@ -2296,7 +2314,7 @@ class Set(Serializable):
         elif op == "NOT":
             if first is None:
                 raise SyntaxError("Invalid NOT query")
-            built = ~self.build(first)
+            built = ~self.build(first)  # pylint: disable=invalid-unary-operand-type
         else:
             # normal operation (GT, EQ, LT, ...)
             for k, v in {"left": first, "right": second}.items():
