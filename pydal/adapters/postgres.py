@@ -39,7 +39,7 @@ class Postgre(
     REGEX_URI = \
         r'^(?P<user>[^:@]+)(:(?P<password>[^@]*))?' \
         r'@(?P<host>[^:/]*|\[[^\]]+\])(:(?P<port>\d+))?' \
-         '/(?P<db>[^?]+)' \
+        r'/(?P<db>[^?]+)' \
         r'(\?(?P<uriargs>.*))?$'  # sslmode, ssl (no value) and unix_socket
 
     def __init__(self, db, uri, pool_size=0, folder=None, db_codec='UTF-8',
@@ -69,11 +69,7 @@ class Postgre(
         if not host and not socket:
             raise SyntaxError('Host or UNIX socket name required')
         db = m.group('db')
-        if not db and not socket:
-            raise SyntaxError('Database name required')
-        port = int(m.group('port') or '5432')
-        sslmode = m.group('sslmode')
-        appname = m.group('appname')
+        appname = uri_args.get('appname')
         if appname: self.driver_args.update(application_name=appname)
         self.driver_args.update(user=user, database=db)
         if password is not None:
