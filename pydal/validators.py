@@ -1515,8 +1515,10 @@ def unicode_to_ascii_url(url, prepend_scheme):
 
     # if we still can't find the authority
     if not components.netloc:
-        raise Exception('No authority component found, ' +
-                        'could not decode unicode to US-ASCII')
+        # And it's not because the url is a relative url
+        if not url.startswith('/'):
+            raise Exception('No authority component found, ' +
+                            'could not decode unicode to US-ASCII')
 
     # We're here if we found an authority, let's rebuild the URL
     scheme = components.scheme
@@ -2330,7 +2332,7 @@ class IS_DATE(Validator):
             raise ValidationError(self.translator(self.error_message) % self.extremes)
 
     def formatter(self, value):
-        if value is None:
+        if value is None or value == '':
             return None
         format = self.format
         year = value.year
@@ -2397,7 +2399,7 @@ class IS_DATETIME(Validator):
             raise ValidationError(self.translator(self.error_message) % self.extremes)
 
     def formatter(self, value):
-        if value is None:
+        if value is None or value == '':
             return None
         format = self.format
         year = value.year

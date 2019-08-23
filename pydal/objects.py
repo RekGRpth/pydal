@@ -313,6 +313,9 @@ class Table(Serializable, BasicStorage):
                 if field.db is not None:
                     field = copy.copy(field)
                 include_new(field)
+            elif isinstance(field, (list, tuple)):
+                for other in field:
+                    include_new(other)
             elif isinstance(field, Table):
                 table = field
                 for field in table:
@@ -324,7 +327,7 @@ class Table(Serializable, BasicStorage):
                 include_new(Field(**field))
             elif not isinstance(field, (Field, Table)):
                 raise SyntaxError(
-                    'define_table argument is not a Field or Table: %s' %
+                    'define_table argument is not a Field, Table of list: %s' %
                     field
                 )
         fields = newfields
@@ -2426,6 +2429,15 @@ class Set(Serializable):
         ret and [f(self) for f in table._after_delete]
         return ret
 
+    def delete_naive(self):
+        """
+        Same as delete but does not call table._before_delete and _after_delete
+        """
+        db = self.db
+        table = db._adapter.get_table(self.query)
+        ret = db._adapter.delete(table, self.query)
+        return ret
+
     def update(self, **update_fields):
         db = self.db
         table = db._adapter.get_table(self.query)
@@ -2537,6 +2549,9 @@ class LazySet(object):
 
     def delete(self):
         return self._getset().delete()
+
+    def delete_naive(self):
+        return self._getset().delete_naive()
 
     def update(self, **update_fields):
         return self._getset().update(**update_fields)
