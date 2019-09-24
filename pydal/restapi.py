@@ -57,7 +57,7 @@ class Policy(object):
         'POST': {'authorize':False, 'fields':None},
         'PUT': {'authorize':False, 'fields':None},
         'DELETE': {'authorize':False},
-        'GET': {'authorize':False, 'fields':None, 'query':None, 'allowed_patterns':[], 'denied_patterns':[], 'limit': MAX_LIMIT}
+        'GET': {'authorize':False, 'fields':None, 'query':None, 'allowed_patterns':[], 'denied_patterns':[], 'limit': MAX_LIMIT, 'allow_lookup': False}
         }
 
     def __init__(self):
@@ -97,7 +97,7 @@ class Policy(object):
             return False
         for key in get_vars:
             if any(fnmatch.fnmatch(key, p) for p in policy['denied_patterns']):
-                if exception:
+                if exceptions:
                     raise PolicyViolation('Pattern is not allowed')
                 return False
             allowed_patterns = policy['allowed_patterns']
@@ -106,6 +106,21 @@ class Policy(object):
                     raise PolicyViolation('Pattern is not explicitely allowed')
                 return False
         return True
+
+    def check_if_lookup_allowed(self, tablename, exceptions=True):
+        policy = self.info.get(tablename) or self.info.get('*')
+        if not policy:
+            if exceptions:
+                raise PolicyViolation('No policy for this object')
+            return False
+        policy = policy.get('GET')
+        if not policy:
+            if exceptions:
+                raise PolicyViolation('No policy for this method')
+            return False
+        if policy.get('allow_lookup'):
+            return True
+        return False
 
     def allowed_fieldnames(self, table, method='GET'):
         method = method.upper()
@@ -128,7 +143,7 @@ class Policy(object):
 
 DENY_ALL_POLICY = Policy()
 ALLOW_ALL_POLICY = Policy()
-ALLOW_ALL_POLICY.set(tablename='*', method='GET', authorize=True, allowed_patterns=['**'])
+ALLOW_ALL_POLICY.set(tablename='*', method='GET', authorize=True, allowed_patterns=['**'],allow_lookup=True)
 ALLOW_ALL_POLICY.set(tablename='*', method='POST', authorize=True)
 ALLOW_ALL_POLICY.set(tablename='*', method='PUT', authorize=True)
 ALLOW_ALL_POLICY.set(tablename='*', method='DELETE', authorize=True)
@@ -168,8 +183,8 @@ class RestAPI(object):
             if not id:
                 raise InvalidFormat('No item id specified')
             table =  self.db[tablename]
-            data = self.db(table.id == id).validate_and_update(**post_vars).as_dict()
-            if not data.get('updated'):
+            data = table.validate_and_update(id, **post_vars).as_dict()
+            if not data.get('errors') and not data.get('updated'):
                 raise NotFound('Item not found')
             return data
         elif method == 'DELETE':
@@ -177,7 +192,7 @@ class RestAPI(object):
             if not id:
                 raise InvalidFormat('No item id specified')
             table = self.db[tablename]
-            deleted = self.db(table.id == id).delete()
+            deleted = self.db(table._id == id).delete()
             if not deleted:
                 raise NotFound('Item not found')
             return {'deleted': deleted}
@@ -250,6 +265,10 @@ class RestAPI(object):
             if self.policy:
                 self.policy.check_if_allowed('GET', tablename)
 
+        def check_table_lookup_permission(tablename):
+            if self.policy:
+                self.policy.check_if_lookup_allowed(tablename)
+
         def filter_fieldnames(table, fieldnames):
             if self.policy:
                 if fieldnames:
@@ -316,7 +335,7 @@ class RestAPI(object):
             ref_table = db[ref_tablename]
             subqueries = [self.make_query(ref_table[k], c, v) for k,c,v in hop1[item]]
             subquery = functools.reduce(lambda a,b: a&b, subqueries)
-            query = table[fieldname].belongs(db(subquery)._select(ref_table.id))
+            query = table[fieldname].belongs(db(subquery)._select(ref_table._id))
             queries.append(query if not is_negated else ~query)
 
         for item in hop2:
@@ -324,7 +343,7 @@ class RestAPI(object):
             ref_table = db[linktable]
             subqueries = [self.make_query(ref_table[k], c, v) for k, c, v in hop2[item]]
             subquery = functools.reduce(lambda a,b: a&b, subqueries)
-            query = table.id.belongs(db(subquery)._select(ref_table[linkfield]))
+            query = table._id.belongs(db(subquery)._select(ref_table[linkfield]))
             queries.append(query if not is_negated else ~query)
 
         for item in hop3:
@@ -334,8 +353,8 @@ class RestAPI(object):
             ref_ref_table = db[ref_ref_tablename]
             subqueries = [self.make_query(ref_ref_table[k], c, v) for k,c,v in hop3[item]]
             subquery = functools.reduce(lambda a, b: a&b, subqueries)
-            subquery &= ref_ref_table.id == ref_table[otherfield]
-            query = table.id.belongs(db(subquery)._select(ref_table[linkfield], groupby=ref_table[linkfield]))
+            subquery &= ref_ref_table._id == ref_table[otherfield]
+            query = table._id.belongs(db(subquery)._select(ref_table[linkfield], groupby=ref_table[linkfield]))
             queries.append(query if not is_negated else ~query)
 
         if not queries:
@@ -358,19 +377,19 @@ class RestAPI(object):
                 ref_tablename = table[key].type.split(' ')[1]
                 ref_table = db[ref_tablename]
                 tfieldnames = filter_fieldnames(ref_table, tfieldnames)
-                check_table_permission(ref_tablename)
+                check_table_lookup_permission(ref_tablename)
                 ids = [row[key] for row in rows]
                 tfields = [ref_table[tfieldname] for tfieldname in tfieldnames]
                 if not 'id' in tfieldnames:
                     tfields.append(ref_table['id'])
-                drows = db(ref_table.id.belongs(ids)).select(*tfields).as_dict()
+                drows = db(ref_table._id.belongs(ids)).select(*tfields).as_dict()
                 if tfieldnames and not 'id' in tfieldnames:
                     for row in drows.values():
                         del row['id']
                 lkey, collapsed = lookup_map[key]['name'], lookup_map[key]['collapsed']
                 for row in rows:
-                    new_row = drows[row[key]]
-                    if collapsed:
+                    new_row = drows.get(row[key])
+                    if new_row and collapsed:
                         del row[key]
                         for rkey in new_row:
                             row[lkey + '_' + rkey] = new_row[rkey]
@@ -380,7 +399,7 @@ class RestAPI(object):
             elif len(key) == 2:
                 lfield, key = key
                 key, tfieldnames = RestAPI.parse_table_and_fields(key)
-                check_table_permission(key)
+                check_table_lookup_permission(key)
                 ref_table = db[key]
                 tfieldnames = filter_fieldnames(ref_table, tfieldnames)
                 ids = [row['id'] for row in rows]
@@ -402,10 +421,10 @@ class RestAPI(object):
                 lfield, key, rfield = key
                 key, tfieldnames = RestAPI.parse_table_and_fields(key)
                 rfield, tfieldnames2 = RestAPI.parse_table_and_fields(rfield)
-                check_table_permission(key)
+                check_table_lookup_permission(key)
                 ref_table = db[key]
                 ref_ref_tablename = ref_table[rfield].type.split(' ')[1]
-                check_table_permission(ref_ref_tablename)
+                check_table_lookup_permission(ref_ref_tablename)
                 ref_ref_table = db[ref_ref_tablename]
                 tfieldnames = filter_fieldnames(ref_table, tfieldnames)
                 tfieldnames2 = filter_fieldnames(ref_ref_table, tfieldnames2)

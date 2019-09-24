@@ -2,6 +2,7 @@
 # pylint: disable=no-member,not-an-iterable
 
 import base64
+import binascii
 import cgi
 import codecs
 import copy
@@ -103,12 +104,19 @@ class Row(BasicStorage):
 
         raise KeyError(key)
 
-    __str__ = __repr__ = lambda self: '<Row %s>' % \
-        self.as_dict(custom_types=[LazySet])
+    def __repr__(self):
+        return '<Row %s>' % self.as_dict(custom_types=[LazySet])
 
-    __int__ = lambda self: self.get('id')
+    def __int__(self):
+        return self.get('id')
 
-    __long__ = lambda self: long(self.get('id'))
+    def __long__(self): 
+        return long(int(self))
+
+    def __hash__(self):
+        return id(self)
+
+    __str__ = __repr__
 
     __call__ = __getitem__
 
@@ -462,7 +470,7 @@ class Table(Serializable, BasicStorage):
     def _validate(self, **vars):
         errors = Row()
         for key, value in iteritems(vars):
-            value, error = getattr(self, key).validate(value)
+            value, error = getattr(self, key).validate(value, vars.get('id'))
             if error:
                 errors[key] = error
         return errors
@@ -770,7 +778,7 @@ class Table(Serializable, BasicStorage):
                 f(row, ret)
         return ret
 
-    def _validate_fields(self, fields, defattr='default'):
+    def _validate_fields(self, fields, defattr='default', id=None):
         response = Row()
         response.id, response.errors, new_fields = None, Row(), Row()
         for field in self:
@@ -782,7 +790,7 @@ class Table(Serializable, BasicStorage):
                     default = default()
             if not field.compute:
                 value = fields.get(field.name, default)
-                value, error = field.validate(value)
+                value, error = field.validate(value, id)
             if error:
                 response.errors[field.name] = "%s" % error
             elif field.name in fields:
@@ -796,15 +804,9 @@ class Table(Serializable, BasicStorage):
             response.id = self.insert(**new_fields)
         return response
 
-    def validate_and_update(self, _key=DEFAULT, **fields):
-        response, new_fields = self._validate_fields(fields, 'update')
-        #: select record(s) for update
-        if _key is DEFAULT:
-            record = self(**fields)
-        elif isinstance(_key, dict):
-            record = self(**_key)
-        else:
-            record = self(_key)
+    def validate_and_update(self, _key, **fields):        
+        record = self(**_key) if isinstance(_key, dict) else self(_key)
+        response, new_fields = self._validate_fields(fields, 'update', record.id)
         #: do the update
         if not response.errors and record:
             if '_id' in self:
@@ -817,7 +819,9 @@ class Table(Serializable, BasicStorage):
                     else:
                         query = query & (getattr(self, key) == value)
                 myset = self._db(query)
-            response.id = myset.update(**new_fields) and record[self._id.name]
+            response.updated = myset.update(**new_fields)            
+        if record:
+            response.id = record.id
         return response
 
     def update_or_insert(self, _key=DEFAULT, **values):
@@ -1954,7 +1958,7 @@ class Field(Expression, Serializable):
             try:
                 filename = base64.b16decode(m.group('name'), True).decode('utf-8')
                 filename = re.sub(REGEX_UPLOAD_CLEANUP, '_', filename)
-            except (TypeError, AttributeError):
+            except (TypeError, AttributeError, binascii.Error):
                 filename = name
         else:
             filename = name
@@ -1992,14 +1996,17 @@ class Field(Expression, Serializable):
                 value = item.formatter(value)
         return value
 
-    def validate(self, value):
+    def validate(self, value, record_id):
         requires = self.requires
         if not requires or requires is DEFAULT:
             return ((value if value != self.map_none else None), None)
         if not isinstance(requires, (list, tuple)):
             requires = [requires]
         for validator in requires:
-            (value, error) = validator(value)
+            # notice that some validator may have different behavior
+            # depending on the record id, for example
+            # IS_NOT_IN_DB should exclude the current record_id from check
+            (value, error) = validator(value, record_id)
             if error:
                 return (value, error)
         return ((value if value != self.map_none else None), None)
@@ -2467,7 +2474,7 @@ class Set(Serializable):
         response.errors = Row()
         new_fields = copy.copy(update_fields)
         for key, value in iteritems(update_fields):
-            value, error = table[key].validate(value)
+            value, error = table[key].validate(value, update_fields.get('id'))
             if error:
                 response.errors[key] = '%s' % error
             else:
@@ -2668,7 +2675,7 @@ class BasicRows(object):
                         yield i
                         i += 1
                 key_generator = new_key()
-                key = lambda r: key_generator.next()
+                key = lambda r: next(key_generator)
 
         rows = self.as_list(compact, storage_to_dict, datetime_to_str,
                             custom_types)
