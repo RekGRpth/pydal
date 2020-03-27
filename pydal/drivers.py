@@ -172,3 +172,10 @@ try:
     DRIVERS["imaplib"] = imaplib
 except:
     pass
+
+try:
+    import pytds
+
+    DRIVERS["pytds"] = pytds
+except:
+    pass
