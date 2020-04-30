@@ -418,14 +418,17 @@ class IS_JSON(Validator):
         self.error_message = error_message
 
     def validate(self, value, record_id=None):
-        try:
-            if self.native_json:
-                json.loads(value)  # raises error in case of malformed json
-                return value  # the serialized value is not passed
-            else:
-                return json.loads(value)
-        except JSONErrors:
-            raise ValidationError(self.translator(self.error_message))
+        if isinstance(value, (str, bytes)):
+            try:
+                if self.native_json:
+                    json.loads(value)  # raises error in case of malformed json
+                    return value  # the serialized value is not passed
+                else:
+                    return json.loads(value)
+            except JSONErrors:
+                raise ValidationError(self.translator(self.error_message))
+        else:
+            return value
 
     def formatter(self, value):
         if value is None:
@@ -4447,13 +4450,12 @@ class CRYPT(Validator):
 
 #  entropy calculator for IS_STRONG
 #
-lowerset = frozenset(u"abcdefghijklmnopqrstuvwxyz")
-upperset = frozenset(u"ABCDEFGHIJKLMNOPQRSTUVWXYZ")
-numberset = frozenset(u"0123456789")
-sym1set = frozenset(u"!@#$%^&*()")
-sym2set = frozenset(u"~`-_=+[]{}\\|;:'\",.<>?/")
-otherset = frozenset(u"0123456789abcdefghijklmnopqrstuvwxyz")  # anything else
-
+lowerset = frozenset(b"abcdefghijklmnopqrstuvwxyz")
+upperset = frozenset(b"ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+numberset = frozenset(b"0123456789")
+sym1set = frozenset(b"!@#$%^&*() ")
+sym2set = frozenset(b"~`-_=+[]{}\\|;:'\",.<>?/")
+otherset = frozenset(b''.join(chr(x).encode() for x in range(256)))
 
 def calc_entropy(string):
     """ calculates a simple entropy for a given string """
@@ -4461,14 +4463,15 @@ def calc_entropy(string):
     other = set()
     seen = set()
     lastset = None
-    string = to_unicode(string)
+    string = to_bytes(string)
     for c in string:
         # classify this character
-        inset = otherset
-        for cset in (lowerset, upperset, numberset, sym1set, sym2set):
+        inset = None
+        for cset in (lowerset, upperset, numberset, sym1set, sym2set, otherset):
             if c in cset:
                 inset = cset
                 break
+        assert inset is not None
         # calculate effect of character on alphabet size
         if inset not in seen:
             seen.add(inset)
