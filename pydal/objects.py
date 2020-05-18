@@ -806,6 +806,8 @@ class Table(Serializable, BasicStorage):
     @property
     def sql_fullref(self):
         if self._tablename == self._dalname:
+            if self._db._adapter.dbengine == "oracle":
+                return self._db._adapter.dialect.quote(self._rname)
             return self._rname
         return self._db._adapter.sqlsafe_table(self._tablename, self._rname)
 
@@ -1207,7 +1209,7 @@ class Table(Serializable, BasicStorage):
         if "id" in self and "id" not in other.fields:
             other["id"] = other[self.id.name]
         other._id = other[self._id.name]
-        self._db[alias] = other
+        self._db._aliased_tables[alias] = other
         return other
 
     def on(self, query):
@@ -1618,6 +1620,11 @@ class Expression(object):
 
     def with_alias(self, alias):
         return Expression(self.db, self._dialect._as, self, alias, self.type)
+    
+    @property
+    def alias(self):
+        if self.op == self._dialect._as:
+            return self.second
 
     # GIS expressions
 

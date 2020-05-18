@@ -1,7 +1,7 @@
 language: python
 
 sudo: required
-dist: trusty
+dist: "xenial"
 
 cache: pip
 
@@ -11,6 +11,19 @@ python:
   - 'pypy3'
   - '3.5'
   - '3.6'
+  - '3.7'
+  - '3.8'
+
+before_install:
+  - if [ "$ADAPTER" = 'oracle' ]; then
+      wget 'https://github.com/cbandy/travis-oracle/archive/v2.0.2.tar.gz' ;
+      mkdir -p .travis/oracle ;
+      tar x -C .travis/oracle --strip-components=1 -f v2.0.2.tar.gz ;
+      bash -x .travis/oracle/download.sh ;
+      bash -x .travis/oracle/install.sh ;
+      pip install cx_Oracle ;
+      echo -e "CREATE USER TEST IDENTIFIED BY TEST ;\n GRANT CONNECT, RESOURCE TO TEST ;\n" | "$ORACLE_HOME/bin/sqlplus" -L -S / AS SYSDBA ;
+    fi
 
 install:
   - pip install tox>=1.8
@@ -18,6 +31,14 @@ install:
 env:
   global:
     - PIP_DOWNLOAD_CACHE=$HOME/.pip-cache
+    - ORACLE_COOKIE=sqldev
+    - ORACLE_FILE=oracle11g/xe/oracle-xe-11.2.0-1.0.x86_64.rpm.zip
+    - ORACLE_BASE=/u01/app/oracle
+    - ORACLE_HOME=/u01/app/oracle/product/11.2.0/xe
+    - ORACLE_SID=XE
+    - PATH=$PATH:$ORACLE_HOME/bin
+    - LD_LIBRARY_PATH=$ORACLE_HOME/lib
+    - NLS_LANG=.UTF8
   matrix:
     - ADAPTER=sqlite
     - ADAPTER=mysql
@@ -25,25 +46,44 @@ env:
     - ADAPTER=postgres3
     - ADAPTER=google
     - ADAPTER=mongo
+    - ADAPTER=oracle
 
 matrix:
   exclude:
+    - python: '2.7'
+      env: ADAPTER=oracle
     - python: 'pypy'
       env: ADAPTER=postgres
     - python: 'pypy'
       env: ADAPTER=postgres3
     - python: 'pypy'
       env: ADAPTER=google
+    - python: 'pypy'
+      env: ADAPTER=oracle
     - python: 'pypy3'
       env: ADAPTER=google
     - python: 'pypy3'
       env: ADAPTER=postgres
     - python: 'pypy3'
       env: ADAPTER=postgres3
+    - python: 'pypy3'
+      env: ADAPTER=oracle
     - python: '3.5'
       env: ADAPTER=google
     - python: '3.6'
       env: ADAPTER=google
+    - python: '3.7'
+      env: ADAPTER=google
+    - python: '3.8'
+      env: ADAPTER=google
+    - python: '3.5'
+      env: ADAPTER=oracle
+    - python: '3.6'
+      env: ADAPTER=oracle
+    - python: '3.7'
+      env: ADAPTER=oracle
+    - python: '3.8'
+      env: ADAPTER=oracle
 
 before_script:
   - if [[ $TRAVIS_PYTHON_VERSION == '2.7' ]]; then pip install codecov; fi
