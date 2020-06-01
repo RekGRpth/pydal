@@ -16,6 +16,7 @@ from .._compat import (
     iteritems,
     long,
 )
+from .._compat import to_bytes
 from .._globals import THREAD_LOCAL
 from .serializers import serializers
 
@@ -507,19 +508,19 @@ class DatabaseStoredFile:
         self.mode = mode
         DatabaseStoredFile.try_create_web2py_filesystem(db)
         self.p = 0
-        self.data = ""
-        if mode in ("r", "rw", "rb", "a"):
+        self.data = b""
+        if mode in ("r", "rw", "rb", "a", "ab"):
             query = "SELECT content FROM web2py_filesystem WHERE path='%s'" % filename
             rows = self.db.executesql(query)
             if rows:
-                self.data = rows[0][0]
+                self.data = to_bytes(rows[0][0])
             elif exists(filename):
-                datafile = open(filename, "r")
+                datafile = open(filename, "rb")
                 try:
                     self.data = datafile.read()
                 finally:
                     datafile.close()
-            elif mode in ("r", "rw"):
+            elif mode in ("r", "rw", "rb"):
                 raise RuntimeError("File %s does not exist" % filename)
 
     def read(self, bytes=None):
@@ -548,8 +549,8 @@ class DatabaseStoredFile:
             self.db.executesql(
                 "DELETE FROM web2py_filesystem WHERE path='%s'" % self.filename
             )
-            query = "INSERT INTO web2py_filesystem(path,content) VALUES ('%s','%s')" % (
-                self.filename,
+            query = b"INSERT INTO web2py_filesystem(path,content) VALUES ('%s','%s')" % (
+                to_bytes(self.filename),
                 self.data.replace("'", "''"),
             )
             self.db.executesql(query)
