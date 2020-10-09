@@ -181,7 +181,7 @@ def smart_query(fields, text):
         if not m:
             break
         text = "%s#%i%s" % (text[: m.start()], i, text[m.end() :])
-        constants[str(i)] = m.group()[1:-1]
+        constants[str(i)] = m.group()[1:-1].replace('\\', '')
         i += 1
     text = re.sub("\s+", " ", text).lower()
     for a, b in [
