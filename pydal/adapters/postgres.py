@@ -86,8 +86,7 @@ class Postgre(with_metaclass(PostgreMeta, SQLAdapter)):
         if not host and not socket:
             raise SyntaxError("Host or UNIX socket name required")
         db = m.group("db")
-        appname = uri_args.get('appname')
-        if appname: self.driver_args.update(application_name=appname)
+        self.driver_args.update(**uri_args)
         self.driver_args.update(user=user, database=db)
         if password is not None:
             self.driver_args["password"] = password
