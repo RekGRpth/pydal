@@ -2069,6 +2069,7 @@ class Field(Expression, Serializable):
                     path = self.uploadfolder
                 elif self.db is not None and self.db._adapter.folder:
                     path = pjoin(self.db._adapter.folder, "..", "uploads")
+                    path = os.path.abspath(path)
                 else:
                     raise RuntimeError(
                         "you must specify a Field(..., uploadfolder=...)"
@@ -2153,6 +2154,7 @@ class Field(Expression, Serializable):
                 path = self.uploadfolder
             else:
                 path = pjoin(self.db._adapter.folder, "..", "uploads")
+                path = os.path.abspath(path)
         if self.uploadseparate:
             t = m.group("table")
             f = m.group("field")
