@@ -16,8 +16,8 @@ class Oracle(SQLAdapter):
 
     cmd_fix = re.compile("[^']*('[^']*'[^']*)*\:(?P<clob>(C|B)LOB\('([^']+|'')*'\))")
 
-    def _initialize_(self, do_connect):
-        super(Oracle, self)._initialize_(do_connect)
+    def _initialize_(self):
+        super(Oracle, self)._initialize_()
         self.ruri = self.uri.split("://", 1)[1]
         if "threaded" not in self.driver_args:
             self.driver_args["threaded"] = True
@@ -48,7 +48,7 @@ class Oracle(SQLAdapter):
         command = self.filter_sql_command(args[0])
         i = 1
         while True:
-            m = re.match(self.REGEX_CLOB, command)
+            m = re.match(self.cmd_fix, command)
             if not m:
                 break
             command = command[: m.start("clob")] + str(i) + command[m.end("clob") :]
