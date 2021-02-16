@@ -30,7 +30,6 @@ from ._compat import (
     copyreg,
     reduce,
     to_bytes,
-    to_native,
     to_unicode,
     long,
     text_type,
@@ -72,7 +71,7 @@ from .helpers.methods import (
     attempt_upload_on_insert,
     attempt_upload_on_update,
     delete_uploaded_files,
-    uuidstr
+    uuidstr,
 )
 from .helpers.serializers import serializers
 from .utils import deprecated
@@ -898,6 +897,7 @@ class Table(Serializable, BasicStorage):
 
     def _validate_fields(self, fields, defattr="default", id=None):
         from .validators import CRYPT
+
         response = Row()
         response.id, response.errors, new_fields = None, Row(), Row()
         for field in self:
@@ -912,7 +912,7 @@ class Table(Serializable, BasicStorage):
                 value, error = field.validate(ovalue, id)
             if error:
                 response.errors[field.name] = "%s" % error
-            elif field.type == 'password' and ovalue == CRYPT.STARS:
+            elif field.type == "password" and ovalue == CRYPT.STARS:
                 pass
             elif field.name in fields:
                 # only write if the field was passed and no error
@@ -1610,13 +1610,17 @@ class Expression(object):
                 return self.contains("")
             else:
                 return reduce(all and AND or OR, subqueries)
-        if self.type not in (
-            "string",
-            "text",
-            "json",
-            "jsonb",
-            "upload",
-        ) and not self.type.startswith("list:"):
+        if (
+            self.type
+            not in (
+                "string",
+                "text",
+                "json",
+                "jsonb",
+                "upload",
+            )
+            and not self.type.startswith("list:")
+        ):
             raise SyntaxError("contains used with incompatible field type")
         return Query(
             self.db, self._dialect.contains, self, value, case_sensitive=case_sensitive
@@ -1624,7 +1628,7 @@ class Expression(object):
 
     def with_alias(self, alias):
         return Expression(self.db, self._dialect._as, self, alias, self.type)
-    
+
     @property
     def alias(self):
         if self.op == self._dialect._as:
@@ -2039,7 +2043,7 @@ class Field(Expression, Serializable):
         m = re.search(REGEX_UPLOAD_EXTENSION, filename)
         extension = m and m.group(1) or "txt"
         uuid_key = uuidstr().replace("-", "")[-16:]
-        encoded_filename = to_native(base64.b16encode(to_bytes(filename)).lower())
+        encoded_filename = to_unicode(base64.urlsafe_b64encode(to_bytes(filename)))
         # Fields that are not bound to a table use "tmp" as the table name
         tablename = getattr(self, "_tablename", "tmp")
         newfilename = "%s.%s.%s.%s" % (
@@ -2077,9 +2081,7 @@ class Field(Expression, Serializable):
                 if self.uploadseparate:
                     if self.uploadfs:
                         raise RuntimeError("not supported")
-                    path = pjoin(
-                        path, "%s.%s" % (tablename, self.name), uuid_key[:2]
-                    )
+                    path = pjoin(path, "%s.%s" % (tablename, self.name), uuid_key[:2])
                 if not exists(path):
                     os.makedirs(path)
                 pathfilename = pjoin(path, newfilename)
@@ -2137,13 +2139,17 @@ class Field(Expression, Serializable):
         self_uploadfield = self.uploadfield
         if self.custom_retrieve_file_properties:
             return self.custom_retrieve_file_properties(name, path)
-        if m.group("name"):
+        try:
             try:
-                filename = base64.b16decode(m.group("name"), True).decode("utf-8")
-                filename = re.sub(REGEX_UPLOAD_CLEANUP, "_", filename)
-            except (TypeError, AttributeError, binascii.Error):
-                filename = name
-        else:
+                filename = to_unicode(
+                    base64.b16decode(m.group("name"), True)
+                )  # Legacy file encoding is base 16 lowercase
+            except (binascii.Error, TypeError):
+                filename = to_unicode(
+                    base64.urlsafe_b64decode(m.group("name"))
+                )  # New encoding is base 64
+            filename = re.sub(REGEX_UPLOAD_CLEANUP, "_", filename)
+        except (TypeError, AttributeError):
             filename = name
         # ## if file is in DB
         if isinstance(self_uploadfield, (str, Field)):
@@ -3598,7 +3604,7 @@ class IterRows(BasicRows):
 
         # fetch and drop the first key - 1 elements
         for i in xrange(n_to_drop):
-            self.cursor._fetchone()
+            self.cursor.fetchone()
         row = next(self)
         if row is None:
             raise IndexError
