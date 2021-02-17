@@ -23,6 +23,10 @@ class PostgreDialect(SQLDialect):
     def type_double(self):
         return "FLOAT8"
 
+    @sqltype_for("xml")
+    def type_xml(self):
+        return "XML"
+
     @sqltype_for("id")
     def type_id(self):
         return "SERIAL PRIMARY KEY"
