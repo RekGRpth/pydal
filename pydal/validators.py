@@ -436,7 +436,7 @@ class IS_JSON(Validator):
         if self.native_json:
             return value
         else:
-            return json.dumps(value)
+            return json.dumps(value, ensure_ascii=False)
 
 
 class IS_IN_SET(Validator):
