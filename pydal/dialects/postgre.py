@@ -96,6 +96,8 @@ class PostgreDialect(SQLDialect):
     def like(self, first, second, escape=None, query_env={}):
         if isinstance(second, Expression):
             second = self.expand(second, "string", query_env=query_env)
+            if escape is None:
+                escape = "\\"
         else:
             second = self.expand(second, "string", query_env=query_env)
             if escape is None:
