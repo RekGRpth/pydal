@@ -3063,6 +3063,7 @@ class BasicRows(object):
         )
 
         def unquote_colnames(colnames):
+            if represent: return [field.label for field in self.colnames_fields if field.readable]
             unq_colnames = []
             for col in colnames:
                 m = self.db._adapter.REGEX_TABLE_DOT_FIELD.match(col)
