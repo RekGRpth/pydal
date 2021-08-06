@@ -9,7 +9,7 @@ jobs:
       GITHUB_TOKEN: ${{ github.token }}
     runs-on: ubuntu-latest
     steps:
-      - uses: rekgrpth/git-clone-action@v1
+      - uses: rekgrpth/git-clone-shell-action@v1
       - env:
           INPUTS_REPOSITORY: web2py/pydal
-        uses: rekgrpth/git-fetch-upstream-merge-upstream-push-action@v1
+        uses: rekgrpth/git-fetch-upstream-merge-push-shell-action@v1
