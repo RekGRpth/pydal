@@ -2885,6 +2885,9 @@ class LazySet(object):
     def select(self, *fields, **attributes):
         return self._getset().select(*fields, **attributes)
 
+    def iterselect(self, *fields, **attributes):
+        return self._getset().iterselect(*fields, **attributes)
+
     def nested_select(self, *fields, **attributes):
         return self._getset().nested_select(*fields, **attributes)
 
