@@ -330,7 +330,7 @@ def _fieldformat(r, id):
     if not row:
         return str(id)
     elif hasattr(r, "_format") and isinstance(r._format, str):
-        return r._format % row
+        return r._format % dict([(h, r[h].referent.table._format % r[h].referent.table(row[h]) if r[h].type.startswith('reference ') else row[h]) for h in re.compile(r'\((\w+)\)').findall(r._format)])
     elif hasattr(r, "_format") and callable(r._format):
         return r._format(row)
     else:
