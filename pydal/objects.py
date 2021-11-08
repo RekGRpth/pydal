@@ -1670,6 +1670,7 @@ class Expression(object):
                 return self.contains("")
             else:
                 return reduce(all and AND or OR, subqueries)
+        '''
         if (
             self.type
             not in (
@@ -1682,6 +1683,7 @@ class Expression(object):
             and not self.type.startswith("list:")
         ):
             raise SyntaxError("contains used with incompatible field type")
+        '''
         return Query(
             self.db, self._dialect.contains, self, value, case_sensitive=case_sensitive
         )
