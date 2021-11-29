@@ -4,7 +4,6 @@
 import base64
 import binascii
 import cgi
-import codecs
 import copy
 import csv
 import datetime
@@ -15,6 +14,7 @@ import sys
 import types
 import re
 from collections import OrderedDict
+from io import TextIOWrapper
 from ._compat import (
     PY2,
     StringIO,
@@ -101,7 +101,9 @@ DEFAULT_REGEX = {
 
 def csv_reader(utf8_data, dialect=csv.excel, encoding="utf-8", **kwargs):
     """like csv.reader but allows to specify an encoding, defaults to utf-8"""
-    csv_reader = csv.reader(codecs.iterdecode(utf8_data, encoding), dialect=dialect, **kwargs)
+    csv_reader = csv.reader(utf8_data if isinstance(utf8_data,TextIOWrapper) 
+                                      else TextIOWrapper(utf8_data,encoding), 
+                            dialect=dialect, **kwargs)
     for row in csv_reader:
         yield [to_unicode(cell, encoding) for cell in row]
 
