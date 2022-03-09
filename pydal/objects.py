@@ -3134,8 +3134,9 @@ class BasicRows(object):
         quotechar = kwargs.get("quotechar", '"')
         quoting = kwargs.get("quoting", csv.QUOTE_MINIMAL)
         represent = kwargs.get("represent", False)
+        escapechar = kwargs.get("escapechar", '\\')
         writer = csv.writer(
-            ofile, delimiter=delimiter, quotechar=quotechar, quoting=quoting
+            ofile, delimiter=delimiter, quotechar=quotechar, quoting=quoting, escapechar=escapechar
         )
 
         def unquote_colnames(colnames):
