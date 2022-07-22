@@ -3,13 +3,13 @@ import datetime
 import re
 import sys
 
-from .._globals import IDENTITY, GLOBAL_LOCKER
-from .._compat import PY2, integer_types, basestring, to_bytes, to_native
+from .._compat import PY2, basestring, integer_types
+from .._globals import GLOBAL_LOCKER, IDENTITY
+from ..adapters.base import NoSQLAdapter
 from ..connection import ConnectionPool
-from ..objects import Field, Query, Expression
 from ..helpers.classes import SQLALL
 from ..helpers.methods import use_common_filters
-from ..adapters.base import NoSQLAdapter
+from ..objects import Expression, Field, Query
 
 long = integer_types[-1]
 
@@ -441,7 +441,7 @@ class IMAPAdapter(NoSQLAdapter):
         x = 0
         for item in mailboxes_list[1]:
             x = x + 1
-            item = to_native(item.strip())
+            item = item.strip()
             if not "NOSELECT" in item.upper():
                 sub_items = item.split('"')
                 sub_items = [
