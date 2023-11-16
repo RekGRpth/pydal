@@ -7,17 +7,19 @@ from ..validators import *
 
 class Tags:
     def __init__(self, table, name="default", tag_table=None):
+        self.name = name
         self.table = table
-        db = table._db
         self.tag_table = tag_table or self._make_tag_table()
 
     def _make_tag_table(self):
-        db.define_table(
-            table._tablename + "_tag_" + name,
+        db = self.table._db
+        tag_table = db.define_table(
+            self.table._tablename + "_tag_" + self.name,
             Field("tagpath"),
-            Field("record_id", table),
+            Field("record_id", self.table),
         )
         db.commit()
+        return tag_table
 
     def get(self, record_id):
         tag_table = self.tag_table
