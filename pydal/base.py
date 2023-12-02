@@ -382,13 +382,8 @@ class DAL(with_metaclass(MetaDAL, Serializable, BasicStorage)):
         thread_key = "%s.%s" % (socket.gethostname(), threading.current_thread())
         instances = enumerate(instances)
         keys = ["%s.%i" % (thread_key, i) for (i, db) in instances]
-<<<<<<< HEAD
-        for (i, db) in instances:
-            if not db._adapter.support_distributed_transaction:
-=======
         for i, db in instances:
             if not db._adapter.support_distributed_transaction():
->>>>>>> upstream/master
                 raise SyntaxError(
                     "distributed transaction not suported by %s" % db._dbname
                 )
@@ -402,13 +397,8 @@ class DAL(with_metaclass(MetaDAL, Serializable, BasicStorage)):
         instances = enumerate(instances)
         thread_key = "%s.%s" % (socket.gethostname(), threading.current_thread())
         keys = ["%s.%i" % (thread_key, i) for (i, db) in instances]
-<<<<<<< HEAD
-        for (i, db) in instances:
-            if not db._adapter.support_distributed_transaction:
-=======
         for i, db in instances:
             if not db._adapter.support_distributed_transaction():
->>>>>>> upstream/master
                 raise SyntaxError(
                     "distributed transaction not suported by %s" % db._dbanme
                 )
