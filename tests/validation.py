@@ -1,4 +1,6 @@
+import os
 import re
+import tempfile
 
 from pydal import DAL, Field
 from pydal._compat import integer_types
@@ -52,10 +54,10 @@ class TestValidateAndInsert(unittest.TestCase):
             "val_and_insert",
             Field("aa"),
             Field("bb", "integer", requires=IS_INT_IN_RANGE(1, 5)),
-            Field("cc", writable=False)
+            Field("cc", writable=False),
         )
         rtn = db.val_and_insert.validate_and_insert(aa="test1", bb=2, cc="not-alloed")
-        self.assertTrue("cc" in rtn["errors"])        
+        self.assertTrue("cc" in rtn["errors"])
         rtn = db.val_and_insert.validate_and_insert(aa="test1", bb=2)
         if IS_NOSQL:
             self.assertEqual(isinstance(rtn.get("id"), long), True)
@@ -71,6 +73,33 @@ class TestValidateAndInsert(unittest.TestCase):
         self.assertNotEqual(rtn["errors"]["bb"], None)
         # cleanup table
         drop(db.val_and_insert)
+
+    def testApiUpload(self):
+        db = DAL(DEFAULT_URI, check_reserved=["all"])
+        with tempfile.TemporaryDirectory() as tempdir:
+            db.define_table(
+                "thing",
+                Field("name", required=True),
+                Field("image", "upload", uploadfolder=tempdir),
+            )
+            b64 = b"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+            res = db.thing.validate_and_insert(
+                image=dict(filename="image", content=b64)
+            )
+            self.assertEqual(res, {"id": None, "errors": {"name": "required"}})
+            self.assertEqual(os.listdir(tempdir), [])
+            res = db.thing.validate_and_insert(
+                name="something", image=dict(filename="image", content=b64)
+            )
+            self.assertEqual(res, {"errors": {}, "id": 1})
+            thing = db.thing(res["id"])
+            self.assertEqual(thing.name, "something")
+            names = os.listdir(tempdir)
+            self.assertEqual(len(names), 1)
+            self.assertEqual(thing.image, names[0])
+            content = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x04\x00\x00\x00\xb5\x1c\x0c\x02\x00\x00\x00\x0bIDATx\xdacd\xf8\x0f\x00\x01\x05\x01\x01'\x18\xe3f\x00\x00\x00\x00IEND\xaeB`\x82"
+            with open(os.path.join(tempdir, names[0]), "rb") as stream:
+                self.assertEqual(stream.read(), content)
 
 
 @unittest.skipIf(IS_IMAP, "TODO: IMAP test")
