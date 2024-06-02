@@ -78,6 +78,7 @@ __all__ = [
     "IS_NOT_EMPTY",
     "IS_NOT_IN_DB",
     "IS_NULL_OR",
+    "IS_SAFE",
     "IS_SLUG",
     "IS_STRONG",
     "IS_TIME",
@@ -476,30 +477,35 @@ class IS_IN_SET(Validator):
         zero="",
         sort=False,
     ):
-        self.multiple = multiple
-        if isinstance(theset, dict):
-            self.theset = [str(item) for item in theset]
-            self.labels = list(theset.values())
-        elif (
-            theset
-            and isinstance(theset, (tuple, list))
-            and isinstance(theset[0], (tuple, list))
-            and len(theset[0]) == 2
-        ):
-            self.theset = [str(item) for item, label in theset]
-            self.labels = [str(label) for item, label in theset]
-        else:
-            self.theset = [str(item) for item in theset]
-            self.labels = labels
+        self.theset = theset
+        self.labels = labels
         self.error_message = error_message
+        self.multiple = multiple
         self.zero = zero
         self.sort = sort
 
-    def options(self, zero=True):
-        if not self.labels:
-            items = [(k, k) for (i, k) in enumerate(self.theset)]
+    def options(self, zero=None):
+        # could be a lasy set
+        iset = self.theset() if callable(self.theset) else self.theset
+        # this could be an interator
+        if isinstance(iset, dict):
+            theset = map(str, iset)
+            labels = list(iset.values())
         else:
-            items = [(k, list(self.labels)[i]) for (i, k) in enumerate(self.theset)]
+            # in case theset is an iterator
+            iset = list(iset)
+            if iset and isinstance(iset[0], (list, tuple)) and len(iset[0]) == 2:
+                labels = [str(label) for _, label in iset]
+                theset = [str(key) for key, _ in iset]
+            else:
+                theset = map(str, iset)
+                labels = self.labels
+        zero = self.zero if zero is None else zero
+
+        if not labels:
+            items = [(k, k) for (i, k) in enumerate(theset)]
+        else:
+            items = [(k, list(labels)[i]) for (i, k) in enumerate(theset)]
         if self.sort:
             items.sort(key=lambda o: str(o[1]).upper())
         if zero and self.zero is not None and not self.multiple:
@@ -507,6 +513,7 @@ class IS_IN_SET(Validator):
         return items
 
     def validate(self, value, record_id=None):
+        valuemap = dict(self.options())
         if self.multiple:
             # if below was values = re.compile("[\w\-:]+").findall(str(value))
             if not value:
@@ -515,20 +522,16 @@ class IS_IN_SET(Validator):
                 values = value
             else:
                 values = [value]
+            if isinstance(self.multiple, (tuple, list)):
+                if not self.multiple[0] <= len(values) < self.multiple[1]:
+                    raise ValidationError(self.translator(self.error_message))
         else:
             values = [value]
-        thestrset = [str(x) for x in self.theset]
-        failures = [x for x in values if not str(x) in thestrset]
+        strkeys = map(str, valuemap)
+        failures = [x for x in values if not str(x) in strkeys]
         if failures and self.theset:
             raise ValidationError(self.translator(self.error_message))
-        if self.multiple:
-            if (
-                isinstance(self.multiple, (tuple, list))
-                and not self.multiple[0] <= len(values) < self.multiple[1]
-            ):
-                raise ValidationError(self.translator(self.error_message))
-            return values
-        return value
+        return values if self.multiple else value
 
 
 class IS_IN_DB(Validator):
@@ -1111,6 +1114,45 @@ class IS_NOT_EMPTY(Validator):
         if empty:
             raise ValidationError(self.translator(self.error_message))
         return value
+
+
+class IS_SAFE(Validator):
+    """
+    Example:
+        Used as::
+
+            Field("html", 'text', requires=IS_SAFE())
+
+            >>> IS_SAFE()("<div></div>")
+            ("<div></div>, None)
+            >>> from py4web import XML
+            >>> sanitizer = lambda text: XML(text, sanitize=True)
+            >>> IS_SAFE(sanitizer, mode="error")("<script></script>")
+            ("<script></script>", "Unsafe Content")
+            >>> IS_SAFE(sanitizer, node="sanitize")("<script></script>")
+            ("", None)
+    """
+
+    def __init__(self, sanitizer=None, error_message="Unsafe Content", mode="error"):
+        self.sanitizer = sanitizer or IS_SAFE.default_sanitizer
+        self.error_message = error_message
+        assert mode in ("error", "sanitize")
+        self.mode = mode
+
+    def validate(self, value, record_id=None):
+        sanitized_value = self.sanitizer(value)
+        if sanitized_value != value and self.mode == "error":
+            raise ValidationError(self.translator(self.error_message))
+        return sanitized_value
+
+    default_regex = re.compile(
+        r"(<\s*/?(script|embed|object|iframe|textarea|input|button).*>)|(<[^>]+ on\w+[^>]+>)",
+        re.IGNORECASE | re.DOTALL,
+    )
+
+    @staticmethod
+    def default_sanitizer(text):
+        return IS_SAFE.default_regex.sub("", text)
 
 
 class IS_ALPHANUMERIC(IS_MATCH):
