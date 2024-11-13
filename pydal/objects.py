@@ -3,7 +3,6 @@
 
 import base64
 import binascii
-import cgi
 import copy
 import csv
 import datetime
@@ -2143,7 +2142,7 @@ class Field(Expression, Serializable):
         filename = "{}".format(filename)
         if self.custom_store:
             return self.custom_store(file, filename, path)
-        if isinstance(file, cgi.FieldStorage):
+        if hasattr(file, "file") and hasattr(file, "filename"):
             filename = filename or file.filename
             file = file.file
         elif not filename:
@@ -3001,7 +3000,7 @@ class BasicRows(object):
             row[children_name] = []
         for row in rows:
             parent = row[parent_name]
-            if parent is None:
+            if parent not in drows:
                 roots.append(row)
             else:
                 drows[parent][children_name].append(row)
