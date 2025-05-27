@@ -1,5 +1,13 @@
 from .base import DAL
 from .objects import Field
+from .validators import (
+    IS_INT_IN_RANGE,
+    IS_FLOAT_IN_RANGE,
+    IS_TIME,
+    IS_DATE,
+    IS_DATETIME,
+    IS_JSON,
+)
 import re
 
 
@@ -7,26 +15,55 @@ class QueryParseError(RuntimeError):
     pass
 
 
+def validate(field, value):
+    """Validate the value for the field"""
+    error = None
+    if (
+        field.type == "id"
+        or field.type.startswith("reference")
+        or field.type.startswith("list:reference")
+    ):
+        error = IS_INT_IN_RANGE(0)(value)[1]
+    elif field.type == "integer" or field.type == "list:integer":
+        error = IS_INT_IN_RANGE()(value)[1]
+    elif field.type == "double" or field.type.startswith("decimal"):
+        error = IS_FLOAT_IN_RANGE()(value)[1]
+    elif field.type == "time":
+        error = IS_TIME()(value)[1]
+    elif field.type == "date":
+        error = IS_DATE()(value)[1]
+    elif field.type == "datetime":
+        error = IS_DATETIME()(value)[1]
+    if error:
+        raise QueryParseError(f"{value}: {error}")
+
+
 class QueryBuilder:
-    token_not = "not"
-    tokens_transform = {
-        "upper": "upper",
-        "lower": "lower",
+    tokens_not = {
+        "not",
     }
-    tokens_op = {
-        "is null": "is null",
-        "is not null": "is not null",
-        "==": "==",
-        "!=": "!=",
-        "<": "<",
-        ">": ">",
-        "<=": "<=",
-        ">=": ">=",
-        "belongs": "belongs",
-        "contains": "contains",
-        "startswith": "startswith",
+    tokens_ops = {
+        "upper",
+        "lower",
+        "is null",
+        "is not null",
+        "is true",
+        "is false",
+        "==",
+        "!=",
+        "<",
+        ">",
+        "<=",
+        ">=",
+        "belongs",
+        "contains",
+        "startswith",
     }
-    tokens_aliases = {
+    tokens_and_or = {
+        "and",
+        "or",
+    }
+    default_token_aliases = {
         "is": "==",
         "is equal": "==",
         "is equal to": "==",
@@ -48,7 +85,6 @@ class QueryBuilder:
         "in": "belongs",
         "starts with": "startswith",
     }
-    tokens_bool = {"and": "and", "or": "or"}
     # regex matching field names, and
     re_token = re.compile(r"^(\w+)\s*(.*)$")
     # regex matching a value or quoted value
@@ -58,36 +94,51 @@ class QueryBuilder:
 
     def __init__(
         self,
-        token_not=None,
-        tokens_transform=None,
-        tokens_op=None,
-        tokens_aliases=None,
-        tokens_bool=None,
+        table,
+        field_aliases=None,
+        token_aliases=None,
         debug=False,
     ):
-        self.token_not = token_not or QueryBuilder.token_not
-        self.tokens_transform = tokens_transform or QueryBuilder.tokens_transform
-        self.tokens_op = tokens_op or QueryBuilder.tokens_op
-        self.tokens_aliases = (
-            QueryBuilder.tokens_aliases if tokens_aliases is None else tokens_aliases
-        )
-        self.tokens_bool = tokens_bool or QueryBuilder.tokens_bool
-        # regex matching a not
-        self.re_not = re.compile(r"^(" + self.token_not + r")(\W.*)$")
-        # regex matcing operators
-        self.tokens_all = {
-            **self.tokens_transform,
-            **self.tokens_op,
-            **self.tokens_aliases,
-        }
+        """
+        Creates a QueryBuilder object
+        params:
+        - table: the table object to be searched
+        - field_aliases: an optional mapping between desired field names and actual field names.
+                         If present only listed fields will be searchable. If only only readable fields.
+        - token_aliases: a mapping between expressions like "is equal to" into operations like "==".
+        """
+        self.table = table
+        # we either override all fields or none
+        if field_aliases:
+            self.fields = {k: table[v] for k, v in field_aliases.items()}
+        else:
+            self.fields = {f.name.lower(): f for f in table if f.readable}
+        # use default token aliases if none provided
+        if token_aliases is None:
+            token_aliases = QueryBuilder.default_token_aliases
+        # build a complete list of tokens insluding aliases
+        self.tokens_not = self._augment(token_aliases, QueryBuilder.tokens_not)
+        self.tokens_and_or = self._augment(token_aliases, QueryBuilder.tokens_and_or)
+        self.tokens_ops = self._augment(token_aliases, QueryBuilder.tokens_ops)
+        # build the regexes that depend on tokens
+        self.re_not = re.compile(r"^(" + "|".join(self.tokens_not) + r")(\W.*)$")
         self.re_op = re.compile(
             "^("
             + "|".join(
-                t.replace(" ", r"\s+") for t in sorted(self.tokens_all, reverse=True)
+                t.replace(" ", r"\s+") for t in sorted(self.tokens_ops, reverse=True)
             )
             + r")\s*(.*)$"
         )
+        # true or false
         self.debug = debug
+
+    @staticmethod
+    def _augment(aliases, original):
+        """returns a dict of k:v for k,v in aliases and v in original"""
+        output = {k: k for k in original}
+        if aliases:
+            output.update({k: v for k, v in aliases.items() if v in original})
+        return output
 
     @staticmethod
     def _find_closing_bracket(text):
@@ -113,14 +164,14 @@ class QueryBuilder:
             prev_c = c
         raise QueryParseError("Unbalanced brackets")
 
-    def parse(self, table, text):
+    def parse(self, text):
         """
         Builds a query from the table given and english text expression
         """
         if self.debug:
             print("PARSING", repr(text))
         # build names of possible searchable fields
-        fields = {field.name.lower(): field for field in table if field.readable}
+        fields = {field.name.lower(): field for field in self.table if field.readable}
         # in the stack we put queries and logical operators only
         stack = []
 
@@ -128,7 +179,9 @@ class QueryBuilder:
         def next(text, regex, ignore=False):
             text = text.strip()
             if not text:
-                return None, ""
+                if ignore:
+                    return None, text
+                raise QueryParseError("Unable to parse truncated expression")
             match = regex.match(text)
             if not match:
                 if ignore:
@@ -156,35 +209,41 @@ class QueryBuilder:
             if text.startswith("("):
                 i = QueryBuilder._find_closing_bracket(text)
                 token, text = text[1:i], text[i + 1 :].strip()
-                query = self.parse(table, token)
+                query = self.parse(token)
             else:
                 token, text = next(text, self.re_token)
                 # match a field name
-                if token.lower() not in fields:
+                if token.lower() not in self.fields:
                     raise QueryParseError(
                         f"Unable to parse {token}, expected a field name"
                     )
-                field = table[token]
+                field = self.fields[token]
                 is_text = field.type in ("string", "text", "blob")
                 has_contains = is_text or field.type.startswith("list:")
-                # check an operator
+                # match an operator
                 token, text = next(text, self.re_op)
-                token = self.tokens_all[token]
+                token = self.tokens_ops[token]
                 # if the operator is a field modifier, get the next operator
                 if is_text and token == "lower":
                     token, text = next(text, self.re_op)
+                    token = self.tokens_ops.get(token)
                     field = field.lower()
                 elif is_text and token == "upper":
                     token, text = next(text, self.re_op)
+                    token = self.tokens_ops.get(token)
                     field = field.upper()
                 if token == "is null":
                     query = field == None
                 elif token == "is not null":
                     query = field != None
+                elif field.type == "boolean" and token == "is true":
+                    query = field == True
+                elif field.type == "boolean" and token == "is false":
+                    query = field == False
                 else:
                     # the operator requires a value, match a value
                     value, text = next(text, self.re_value)
-                    token = self.tokens_all[token]
+                    validate(field, value)
                     if token == "==":
                         query = field == value
                     elif token == "!=":
@@ -201,11 +260,12 @@ class QueryBuilder:
                         query = field.contains(value)
                     elif is_text and token == "startswith":
                         query = field.startswith(value)
-                    elif token == "belongs":
+                    elif token == "belongs" and field:
                         # the operator allows multiple values, macth next values
                         value = [value]
                         while text.startswith(","):
                             token, text = next(text[1:], self.re_value)
+                            validate(field, token)
                             value.append(token)
                         query = field.belongs(value)
                     else:
@@ -224,15 +284,15 @@ class QueryBuilder:
                 stack.append(query)
 
             # we have a query match next "and" or "or" and put them in stack
-            token, text = next(text, self.re_token)
+            token, text = next(text, self.re_token, ignore=True)
             if not token:
                 break
-            elif token in self.tokens_bool and text:
-                stack.append(self.tokens_bool[token])
+            elif token in self.tokens_and_or and text:
+                stack.append(self.tokens_and_or[token])
             else:
                 raise QueryParseError(f"Unable to parse {token}, expected and/or")
         if len(stack) > 1:
             # this should never happen
             raise QueryParseError("Internal error: leftover stack")
         # return the one query left in stack
-        return stack[-1] if stack else table.id > 0
+        return stack[-1] if stack else self.table.id > 0

@@ -6,71 +6,89 @@ from pydal import DAL, Field, QueryBuilder
 class TestQueryBuilder(unittest.TestCase):
     def test_query_builder(self):
         db = DAL("sqlite:memory")
-        db.define_table("thing", Field("name"))
-        builder = QueryBuilder()
-        query = builder.parse(db.thing, "name is null")
+        db.define_table("thing", Field("name"), Field("solid", "boolean"))
+        builder = QueryBuilder(db.thing)
+        query = builder.parse("name is null")
         self.assertEqual(str(query), '("thing"."name" IS NULL)')
-        query = builder.parse(db.thing, "name is not null")
+        query = builder.parse("name is not null")
         self.assertEqual(str(query), '("thing"."name" IS NOT NULL)')
-        query = builder.parse(db.thing, "name is Max")
-        self.assertEqual(str(query), '("thing"."name" = \'Max\')')
-        query = builder.parse(db.thing, "name is equal to Max")
-        self.assertEqual(str(query), '("thing"."name" = \'Max\')')
-        query = builder.parse(db.thing, "name == Max")
-        self.assertEqual(str(query), '("thing"."name" = \'Max\')')
-        query = builder.parse(db.thing, 'name == "Max"')
-        self.assertEqual(str(query), '("thing"."name" = \'Max\')')
-        query = builder.parse(db.thing, 'name == "Ma\\"x"')
-        self.assertEqual(str(query), '("thing"."name" = \'Ma\\"x\')')
-        query = builder.parse(db.thing, 'name != "Max"')
-        self.assertEqual(str(query), '("thing"."name" <> \'Max\')')
-        query = builder.parse(db.thing, 'name < "Max"')
-        self.assertEqual(str(query), '("thing"."name" < \'Max\')')
-        query = builder.parse(db.thing, 'name > "Max"')
-        self.assertEqual(str(query), '("thing"."name" > \'Max\')')
-        query = builder.parse(db.thing, 'name <= "Max"')
-        self.assertEqual(str(query), '("thing"."name" <= \'Max\')')
-        query = builder.parse(db.thing, 'name >= "Max"')
-        self.assertEqual(str(query), '("thing"."name" >= \'Max\')')
-        query = builder.parse(db.thing, "name in Max, John")
-        self.assertEqual(str(query), "(\"thing\".\"name\" IN ('John','Max'))")
-        query = builder.parse(db.thing, "name belongs Max, John")
-        self.assertEqual(str(query), "(\"thing\".\"name\" IN ('John','Max'))")
-        query = builder.parse(db.thing, 'name belongs "Max", "John"')
-        self.assertEqual(str(query), '("thing"."name" IN (\'Max", "John\'))')
-        query = builder.parse(db.thing, 'name contains "Max"')
+        query = builder.parse("solid is true")
+        self.assertEqual(str(query), '("thing"."solid" = \'T\')')
+        query = builder.parse("solid is false")
+        self.assertEqual(str(query), '("thing"."solid" = \'F\')')
+        query = builder.parse("name is Chair")
+        self.assertEqual(str(query), '("thing"."name" = \'Chair\')')
+        query = builder.parse("name is equal to Chair")
+        self.assertEqual(str(query), '("thing"."name" = \'Chair\')')
+        query = builder.parse("name == Chair")
+        self.assertEqual(str(query), '("thing"."name" = \'Chair\')')
+        query = builder.parse('name == "Chair"')
+        self.assertEqual(str(query), '("thing"."name" = \'Chair\')')
+        query = builder.parse('name == "Cha\\"ir"')
+        self.assertEqual(str(query), '("thing"."name" = \'Cha\\"ir\')')
+        query = builder.parse('name != "Chair"')
+        self.assertEqual(str(query), '("thing"."name" <> \'Chair\')')
+        query = builder.parse('name < "Chair"')
+        self.assertEqual(str(query), '("thing"."name" < \'Chair\')')
+        query = builder.parse('name > "Chair"')
+        self.assertEqual(str(query), '("thing"."name" > \'Chair\')')
+        query = builder.parse('name <= "Chair"')
+        self.assertEqual(str(query), '("thing"."name" <= \'Chair\')')
+        query = builder.parse('name >= "Chair"')
+        self.assertEqual(str(query), '("thing"."name" >= \'Chair\')')
+        query = builder.parse("name in Chair, Table")
+        self.assertEqual(str(query), "(\"thing\".\"name\" IN ('Chair','Table'))")
+        query = builder.parse("name belongs Chair, Table")
+        self.assertEqual(str(query), "(\"thing\".\"name\" IN ('Chair','Table'))")
+        query = builder.parse('name belongs "Chair", "Table"')
+        self.assertEqual(str(query), '("thing"."name" IN (\'Chair", "Table\'))')
+        query = builder.parse('name contains "Chair"')
         self.assertEqual(
-            str(query), "(LOWER(\"thing\".\"name\") LIKE '%max%' ESCAPE '\\')"
+            str(query), "(LOWER(\"thing\".\"name\") LIKE '%chair%' ESCAPE '\\')"
         )
-        query = builder.parse(db.thing, 'name startswith "Max"')
-        self.assertEqual(str(query), "(\"thing\".\"name\" LIKE 'Max%' ESCAPE '\\')")
-        query = builder.parse(db.thing, 'name starts with "Max"')
-        self.assertEqual(str(query), "(\"thing\".\"name\" LIKE 'Max%' ESCAPE '\\')")
-        query = builder.parse(db.thing, "name lower == max")
-        self.assertEqual(str(query), '(LOWER("thing"."name") = \'max\')')
-        query = builder.parse(db.thing, "name lower is equal to max")
-        self.assertEqual(str(query), '(LOWER("thing"."name") = \'max\')')
-        query = builder.parse(db.thing, "name upper == MAX")
-        self.assertEqual(str(query), '(UPPER("thing"."name") = \'MAX\')')
-        query = builder.parse(db.thing, "not name == Max")
-        self.assertEqual(str(query), '(NOT ("thing"."name" = \'Max\'))')
+        query = builder.parse('name startswith "Chair"')
+        self.assertEqual(str(query), "(\"thing\".\"name\" LIKE 'Chair%' ESCAPE '\\')")
+        query = builder.parse('name starts with "Chair"')
+        self.assertEqual(str(query), "(\"thing\".\"name\" LIKE 'Chair%' ESCAPE '\\')")
+        query = builder.parse("name lower == chair")
+        self.assertEqual(str(query), '(LOWER("thing"."name") = \'chair\')')
+        query = builder.parse("name lower is equal to chair")
+        self.assertEqual(str(query), '(LOWER("thing"."name") = \'chair\')')
+        query = builder.parse("name upper == CHAIR")
+        self.assertEqual(str(query), '(UPPER("thing"."name") = \'CHAIR\')')
+        query = builder.parse("not name == Chair")
+        self.assertEqual(str(query), '(NOT ("thing"."name" = \'Chair\'))')
 
-        query = builder.parse(db.thing, "not (name == Max)")
-        self.assertEqual(str(query), '(NOT ("thing"."name" = \'Max\'))')
+        query = builder.parse("not (name == Chair)")
+        self.assertEqual(str(query), '(NOT ("thing"."name" = \'Chair\'))')
 
-        query = builder.parse(db.thing, "name == Max or name is John")
+        query = builder.parse("name == Chair or name is Table")
         self.assertEqual(
-            str(query), '(("thing"."name" = \'Max\') OR ("thing"."name" = \'John\'))'
-        )
-
-        query = builder.parse(db.thing, "name == Max and not name is John")
-        self.assertEqual(
-            str(query),
-            '(("thing"."name" = \'Max\') AND (NOT ("thing"."name" = \'John\')))',
+            str(query), '(("thing"."name" = \'Chair\') OR ("thing"."name" = \'Table\'))'
         )
 
-        query = builder.parse(db.thing, "not ((name == Max) and not (name == John))")
+        query = builder.parse("name == Chair and not name is Table")
         self.assertEqual(
             str(query),
-            '(NOT (("thing"."name" = \'Max\') AND (NOT ("thing"."name" = \'John\'))))',
+            '(("thing"."name" = \'Chair\') AND (NOT ("thing"."name" = \'Table\')))',
         )
+
+        query = builder.parse("not ((name == Chair) and not (name == Table))")
+        self.assertEqual(
+            str(query),
+            '(NOT (("thing"."name" = \'Chair\') AND (NOT ("thing"."name" = \'Table\'))))',
+        )
+
+    def test_translations(self):
+        db = DAL("sqlite:memory")
+        db.define_table("thing", Field("name"))
+        field_aliases = {"id": "id", "nome": "name"}
+        token_aliases = {"non è nullo": "is not null", "è uguale a": "=="}
+        builder = QueryBuilder(
+            db.thing, field_aliases=field_aliases, token_aliases=token_aliases
+        )
+
+        query = builder.parse("nome non è nullo")
+        self.assertEqual(str(query), '("thing"."name" IS NOT NULL)')
+        query = builder.parse("nome è uguale a Chair")
+        self.assertEqual(str(query), '("thing"."name" = \'Chair\')')
