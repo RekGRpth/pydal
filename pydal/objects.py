@@ -142,10 +142,8 @@ def get_default_validator(type, _cached_defaults={}):
     # break "reference {table}", "list"deference {table}", "decimal(1,10)"
     type = type.split(" ")[0].split("(")[0]
     # if not found then it is a string field and no need not default validator/formatter
-    validator = _cached_defaults.get(type)
-    if not validator:
-        return []
-    return [validator()]
+    validator = _cached_defaults.get(type, validators.Validator)
+    return validator()
 
 
 class Row(BasicStorage):
@@ -2388,7 +2386,7 @@ class Field(Expression, Serializable):
             path = pjoin(path, "%s.%s" % (t, f), u[:2])
         return dict(path=path, filename=filename)
 
-    def formatter(self, value):
+    def formatter(self, value, none_value=None):
         if value is None:
             return self.map_none
         requires = self.requires
@@ -2404,6 +2402,9 @@ class Field(Expression, Serializable):
         for item in requires:
             if hasattr(item, "formatter"):
                 value = item.formatter(value)
+        # for backwards compatibility
+        if value is None:
+            value = none_value
         return value
 
     def validate(self, value, record_id=None):
