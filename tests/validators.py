@@ -180,6 +180,9 @@ class TestValidators(unittest.TestCase):
         self.assertEqual(rtn, ("massimo", "Value not allowed"))
         rtn = IS_IN_SET(["max", "john"], multiple=True)(("max", "john"))
         self.assertEqual(rtn, (("max", "john"), None))
+        # order reversed should still be fine
+        rtn = IS_IN_SET(["max", "john"], multiple=True)(("john", "max"))
+        self.assertEqual(rtn, (("john", "max"), None))
         rtn = IS_IN_SET(["max", "john"], multiple=True)(("bill", "john"))
         self.assertEqual(rtn, (("bill", "john"), "Value not allowed"))
         rtn = IS_IN_SET(("id1", "id2"), ["first label", "second label"])(
@@ -1549,3 +1552,19 @@ this is the content of the fake file
 
         rtn = IS_SAFE(mode="sanitize")("<div><script>xxx</script></div>")
         ("<div>xxx</div>", "Unsafe Content")
+
+    def test_IS_LIST_OF(self):
+        validator = IS_LIST_OF(IS_EMPTY_OR(IS_DATE()))
+        self.assertEqual(validator.validate(""), [])
+        self.assertEqual(validator.validate([]), [])
+        self.assertEqual(validator.validate([None]), [None])
+        self.assertEqual(
+            validator.validate(["2025-10-12"]), [datetime.date(2025, 10, 12)]
+        )
+
+        # try json
+        self.assertEqual(validator.validate("[]"), [])
+        self.assertEqual(validator.validate("[null]"), [None])
+        self.assertEqual(
+            validator.validate('["2025-10-12"]'), [datetime.date(2025, 10, 12)]
+        )
