@@ -2172,14 +2172,10 @@ class TestDateAndTimes(DALtest):
         db.meeting.insert(
             start_date=datetime.date(2025, 11, 26),
             start_time=datetime.time(12, 30),
-            bookedon=datetime.datetime(
-                2025, 10, 20, 11, 30, 0, tzinfo=zoneinfo.ZoneInfo("UTC")
-            ),
+            bookedon=datetime.datetime(2025, 10, 20, 11, 30, 0)
         )
         db(db.meeting.id == 1).update(
-            bookedon=datetime.datetime(
-                2025, 10, 20, 11, 30, 0, tzinfo=zoneinfo.ZoneInfo("UTC")
-            )
+            bookedon=datetime.datetime(2025, 10, 20, 11, 30, 0)
         )
         # Test with update expressions
         db(db.meeting.id == 1).update(start_date=db.meeting.start_date)
@@ -3164,8 +3160,8 @@ class TestRNameFields(DALtest):
         )
         db.define_table(
             "t2",
-            Field("ref1", type=db.t1.id1, rname="bar1"),
-            Field("ref2", type=db.t1.id2, rname="bar2"),
+            Field("ref1", type=db.t1.id1, rname="bar1", requires=None),
+            Field("ref2", type=db.t1.id2, rname="bar2", requires=None),
         )
         db.t1.insert(id1="a", id2=1, val=10)
         db.t1.insert(id1="a", id2=2, val=30)
