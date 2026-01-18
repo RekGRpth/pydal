@@ -144,7 +144,6 @@ def get_default_validator(field, _cached_defaults={}):
         else:
             validator = validators.Validator()
 
-
     if validator is not None and not field.notnull:
         validator = validators.IS_NULL_OR(validator)
     return validators.DefaultValidatorProxy(validator)
@@ -193,7 +192,9 @@ class Row(BasicStorage):
         key = str(k)
 
         _extra = BasicStorage.get(self, "_extra", None)
-        return (_extra is not None and k in _extra) or BasicStorage.__contains__(self, key)
+        return (_extra is not None and k in _extra) or BasicStorage.__contains__(
+            self, key
+        )
 
     def __repr__(self):
         return "<Row %s>" % self.as_dict(custom_types=[LazySet])
@@ -905,6 +906,8 @@ class Table(Serializable, BasicStorage):
             field = getattr(self, name)
             value = fields[name]
             if field.filter_in and not isinstance(value, Expression):
+                if callable(value):
+                    value = value()
                 value = field.filter_in(value)
             new_fields[name] = (field, value)
             del empty_fieldnames[name]
@@ -2545,7 +2548,16 @@ class Field(Expression, Serializable):
         if not self._db or tablename not in self._db:
             # The table being referenced is not defined yet
             return None
-        table = self._db[tablename]
+        try:
+            table = self._db[tablename]
+        except (KeyError, AttributeError):
+            # The referenced Table is defined in self._db, but not available yet
+            # => it could be self._table still being constructed via
+            #    lazy_define_table, with this field being a self-reference
+            if tablename == self._tablename:
+                table = self._table
+            else:
+                raise
         return table[fieldname] if fieldname else table._id
 
     def referenced_table(self):
