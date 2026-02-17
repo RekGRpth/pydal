@@ -588,11 +588,9 @@ class Table(Serializable, BasicStorage):
         )
 
         self._before_update.append(
-            lambda qset,
-            fs,
-            db=archive_db,
-            an=archive_name,
-            cn=current_record: archive_record(qset, fs, db[an], cn)
+            lambda qset, fs, db=archive_db, an=archive_name, cn=current_record: (
+                archive_record(qset, fs, db[an], cn)
+            )
         )
         if is_active and is_active in fieldnames:
             self._before_delete.append(lambda qset: qset.update(is_active=False))

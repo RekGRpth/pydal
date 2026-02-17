@@ -1033,8 +1033,8 @@ class IS_FLOAT_IN_RANGE(Validator):
         )
 
     def formatter(self, value):
-        if value is None:
-            return None
+        if value in (None, ""):
+            return value
         return str2dec(value).replace(".", self.dot)
 
 
@@ -1115,8 +1115,8 @@ class IS_DECIMAL_IN_RANGE(Validator):
         )
 
     def formatter(self, value):
-        if value is None:
-            return None
+        if value in (None, ""):
+            return value
         return str2dec(value).replace(".", self.dot)
 
 
@@ -1429,8 +1429,8 @@ class IS_LIST_OF_STRINGS(Validator):
         return values
 
     def formatter(self, value):
-        if not value:
-            return ""
+        if value in (None, ""):
+            return value
         if isinstance(value, list):
             return ", ".join(map(quote_token, value))
         return str(value)
@@ -3879,8 +3879,8 @@ class IS_DATE(Validator):
             raise ValidationError(self.translator(self.error_message) % self.extremes)
 
     def formatter(self, value):
-        if value is None or value == "":
-            return None
+        if value in (None, ""):
+            return value
         format = str(self.format)
         year = value.year
         y = "%.4i" % year
@@ -3956,8 +3956,8 @@ class IS_DATETIME(Validator):
             raise ValidationError(self.translator(self.error_message) % self.extremes)
 
     def formatter(self, value):
-        if value is None or value == "":
-            return None
+        if value in (None, ""):
+            return value
         format = str(self.format)
         year = value.year
         y = "%.4i" % year
@@ -4117,8 +4117,8 @@ class IS_LIST_OF(Validator):
         return value
 
     def formatter(self, value):
-        if not value:
-            return ""
+        if value in (None, ""):
+            return value
         if isinstance(value, list):
             return ", ".join(map(quote_token, map(self.other.fomatter, value)))
         return str(value)
@@ -4344,6 +4344,8 @@ class IS_EMPTY_OR(Validator):
         return validator_caller(self.other, value, record_id)
 
     def formatter(self, value):
+        if value in (None, ""):
+            return value
         if hasattr(self.other, "formatter"):
             return self.other.formatter(value)
         return value
