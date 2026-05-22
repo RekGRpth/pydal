@@ -3,13 +3,22 @@
 # pylint: disable=line-too-long,invalid-name
 
 """
-| This file is part of the web2py Web Framework
-| Copyrighted by Massimo Di Pierro <mdipierro@cs.depaul.edu>
-| License: BSD
-| Thanks to ga2arch for help with IS_IN_DB and IS_NOT_IN_DB on GAE
+pyDAL validators — pluggable input checkers.
 
-Validators
------------
+A validator is a callable ``v(value) -> (cleaned_value, error_or_None)``
+attached to a Field via ``requires=``. ``Form``/``validate_and_insert``/
+``validate_and_update`` run the chain and propagate errors back to
+the caller. The same validator instances are also accepted by
+``IS_EMPTY_OR(...)`` / ``ANY_OF([...])`` combinators.
+
+Each validator can carry a per-field error message
+(``error_message=...`` constructor arg) and many accept a coercion
+type (``IS_INT_IN_RANGE``, ``IS_DATE``, ...). The full public list is
+exported in ``__all__`` below.
+
+The base ``Validator`` class provides ``translator`` (the i18n hook
+used by all error messages) and ``formatter`` (the inverse — converting
+a stored value back to user-facing form).
 """
 
 import binascii
@@ -28,21 +37,12 @@ import unicodedata
 import uuid
 from functools import reduce
 
-from ._compat import (
-    PY2,
-    StringIO,
-    basestring,
-    integer_types,
-    ipaddress,
-    string_types,
-    to_bytes,
-    to_native,
-    to_unicode,
-    unichr,
-    unicodeT,
-    urllib_unquote,
-    urlparse,
-)
+import ipaddress
+from io import StringIO
+from urllib import parse as urlparse
+from urllib.parse import unquote as urllib_unquote
+
+from .utils import to_bytes, to_native, to_unicode
 from .objects import Field, FieldMethod, FieldVirtual, Table
 
 JSONErrors = (NameError, TypeError, ValueError, AttributeError, KeyError)
@@ -143,60 +143,60 @@ def parse_tokens(line):
 
 
 class ValidationError(Exception):
-    def __init__(self, message):
+    """
+    Raised inside a validator's ``validate()`` to signal failure.
+
+    The caller (``Validator.__call__`` or ``validator_caller``) catches
+    it and converts it to a ``(value, error_message)`` tuple.
+    """
+
+    def __init__(self, message: str):
         Exception.__init__(self, message)
         self.message = message
 
 
-class Validator(object):
+class Validator:
     """
-    Root for all validators, mainly for documentation purposes.
+    Base class for all pydal validators.
 
-    Validators are classes used to validate input fields (including forms
-    generated from database tables).
+    Subclasses implement ``validate(value, record_id=None)`` and raise
+    ``ValidationError(message)`` on bad input. The base ``__call__``
+    turns the result into the ``(cleaned, error_or_None)`` pair that
+    forms/validate_and_insert expect.
 
-    Here is an example of using a validator with a FORM::
+    Attach to a field via the ``requires=`` keyword::
 
-        INPUT(_name='a', requires=IS_INT_IN_RANGE(0, 10))
+        db.define_table('person',
+            Field('name', requires=IS_NOT_EMPTY()),
+            Field('age', requires=IS_INT_IN_RANGE(0, 150)))
 
-    Here is an example of how to require a validator for a table field::
+    Multiple validators chain in a list — they're invoked in order::
 
-        db.define_table('person', Field('name'))
-        db.person.name.requires=IS_NOT_EMPTY()
+        Field('email', requires=[IS_NOT_EMPTY(), IS_EMAIL()])
 
-    Validators are always assigned using the requires attribute of a field. A
-    field can have a single validator or multiple validators. Multiple
-    validators are made part of a list::
-
-        db.person.name.requires=[IS_NOT_EMPTY(), IS_NOT_IN_DB(db, 'person.id')]
-
-    Validators are called by the function accepts on a FORM or other HTML
-    helper object that contains a form. They are always called in the order in
-    which they are listed.
-
-    Built-in validators have constructors that take the optional argument error
-    message which allows you to change the default error message.
-    Here is an example of a validator on a database table::
-
-        db.person.name.requires=IS_NOT_EMPTY(error_message=T('Fill this'))
-
-    where we have used the translation operator T to allow for
-    internationalization.
-
-    Notice that default error messages are not translated.
+    The ``error_message=`` constructor arg overrides the default error
+    string; pass a translator-wrapped value for i18n.
     """
 
     translator = staticmethod(lambda text: text)
 
     def formatter(self, value):
         """
-        For some validators returns a formatted version (matching the validator)
-        of value. Otherwise just returns the value.
+        Inverse of ``validate``: turn a stored value into a user-facing
+        representation.
+
+        Most validators don't implement this and just return ``value``
+        unchanged. Date/time validators reformat to the configured
+        display format here.
         """
         return value
 
     @staticmethod
     def validate(value, record_id=None):
+        """
+        Validate ``value`` and return the cleaned form, or raise
+        ``ValidationError`` on failure. Subclasses override this.
+        """
         return value
 
     def __call__(self, value, record_id=None):
@@ -207,6 +207,13 @@ class Validator(object):
 
 
 def validator_caller(func, value, record_id=None):
+    """
+    Invoke a validator (new-style ``Validator`` subclass or legacy
+    ``(value, error)`` callable) and return the cleaned value or raise.
+
+    Bridges the two calling conventions so downstream code can mix
+    them in the same ``requires=`` list.
+    """
     validate = getattr(func, "validate", None)
     if validate and validate is not Validator.validate:
         return validate(value, record_id)
@@ -218,7 +225,11 @@ def validator_caller(func, value, record_id=None):
 
 class DefaultValidatorProxy(Validator):
     """
-    A proxy for any other validator. Does nothing but used to wrap default validators.
+    Pass-through wrapper around another validator.
+
+    Used by ``DAL.validators_method`` to mark "this validator was
+    installed by the auto-resolver, not by the user" so it can be
+    replaced silently when the field type changes.
     """
 
     def __init__(self, obj):
@@ -285,29 +296,21 @@ class IS_MATCH(Validator):
             if not expression.endswith("$"):
                 expression = "(%s)$" % expression
         if is_unicode:
-            if not isinstance(expression, unicodeT):
+            if not isinstance(expression, str):
                 expression = expression.decode("utf8")
             self.regex = re.compile(expression, re.UNICODE)
         else:
             self.regex = re.compile(expression)
         self.error_message = error_message
         self.extract = extract
-        self.is_unicode = is_unicode or not PY2
+        self.is_unicode = True
 
     def validate(self, value, record_id=None):
-        if not PY2:  # PY3 convert bytes to unicode
-            value = to_unicode(value)
-
-        if self.is_unicode or not PY2:
-            if not isinstance(value, unicodeT):
-                match = self.regex.search(str(value).decode("utf8"))
-            else:
-                match = self.regex.search(value)
+        value = to_unicode(value)
+        if not isinstance(value, str):
+            match = self.regex.search(str(value).decode("utf8"))
         else:
-            if not isinstance(value, unicodeT):
-                match = self.regex.search(str(value))
-            else:
-                match = self.regex.search(value.encode("utf8"))
+            match = self.regex.search(value)
         if match is not None:
             return self.extract and match.group() or value
         raise ValidationError(self.translator(self.error_message))
@@ -431,9 +434,9 @@ class IS_LENGTH(Validator):
         elif isinstance(value, str):
             try:
                 length = len(to_unicode(value))
-            except:
+            except (UnicodeDecodeError, AttributeError):
                 length = len(value)
-        elif isinstance(value, unicodeT):
+        elif isinstance(value, str):
             length = len(value)
             value = value.encode("utf8")
         elif isinstance(value, (bytes, bytearray, tuple, list)):
@@ -765,7 +768,7 @@ class IS_IN_DB(Validator):
             if field.type in ("id", "integer"):
                 new_values = []
                 for value in values:
-                    if not (isinstance(value, integer_types) or value.isdigit()):
+                    if not (isinstance(value, int) or value.isdigit()):
                         if self.auto_add:
                             value = str(
                                 self.maybe_add(table, self.fieldnames[0], value)
@@ -797,8 +800,8 @@ class IS_IN_DB(Validator):
                     return values
         else:
             if field.type in ("id", "integer"):
-                if isinstance(value, integer_types) or (
-                    isinstance(value, string_types) and value.isdigit()
+                if isinstance(value, int) or (
+                    isinstance(value, str) and value.isdigit()
                 ):
                     value = int(value)
                 elif self.auto_add:
@@ -893,7 +896,7 @@ def range_error_message(error_message, what_to_enter, minimum, maximum):
             error_message += " greater than or equal to %(min)g"
         elif maximum is not None:
             error_message += " less than or equal to %(max)g"
-    if type(maximum) in integer_types:
+    if isinstance(maximum, int):
         maximum -= 1
     return str(translate(error_message)) % dict(min=minimum, max=maximum)
 
@@ -903,6 +906,10 @@ class IS_INT_IN_RANGE(Validator):
     Determines that the argument is (or can be represented as) an int,
     and that it falls within the specified range. The range is interpreted
     in the Pythonic way, so the test is: min <= value < max.
+
+    Note: IS_INT_IN_RANGE has an *exclusive* upper bound (Pythonic), while
+    IS_FLOAT_IN_RANGE and IS_DECIMAL_IN_RANGE use *inclusive* upper bounds.
+    This asymmetry is preserved for backward compatibility.
 
     The minimum and maximum limits can be None, meaning no lower or upper limit,
     respectively.
@@ -1123,7 +1130,7 @@ class IS_DECIMAL_IN_RANGE(Validator):
 def is_empty(value, empty_regex=None):
     _value = value
     """test empty field"""
-    if isinstance(value, (str, unicodeT)):
+    if isinstance(value, str):
         value = value.strip()
         if empty_regex is not None and empty_regex.match(value):
             value = ""
@@ -1368,7 +1375,7 @@ class IS_EMAIL(Validator):
 
     def validate(self, value, record_id=None):
         if (
-            not (isinstance(value, (basestring, unicodeT)))
+            not (isinstance(value, str))
             or not value
             or "@" not in value
         ):
@@ -1694,7 +1701,7 @@ def unicode_to_ascii_authority(authority):
             # don't modify the URL
             asciiLabels.append("")
     # RFC 3490, Section 4, Step 5
-    return str(reduce(lambda x, y: x + unichr(0x002E) + y, asciiLabels))
+    return str(reduce(lambda x, y: x + chr(0x002E) + y, asciiLabels))
 
 
 def unicode_to_ascii_url(url, prepend_scheme):
@@ -3601,7 +3608,7 @@ class IS_HTTP_URL(Validator):
                             new_value = self.validate(schemeToUse + "://" + value)
                             return new_value if self.prepend_scheme else value
                     return value
-        except:
+        except Exception:
             pass
         raise ValidationError(self.translator(self.error_message))
 
@@ -3750,7 +3757,7 @@ class IS_URL(Validator):
         else:
             raise SyntaxError("invalid mode '%s' in IS_URL" % self.mode)
 
-        if isinstance(value, unicodeT):
+        if isinstance(value, str):
             try:
                 value = unicode_to_ascii_url(value, self.prepend_scheme)
             except Exception as e:
@@ -3815,9 +3822,9 @@ class IS_TIME(Validator):
             ivalue = value
             value = re.match(self.REGEX_TIME, value.lower())
             (h, m, s) = (int(value.group("h")), 0, 0)
-            if not value.group("m") is None:
+            if value.group("m") is not None:
                 m = int(value.group("m"))
-            if not value.group("s") is None:
+            if value.group("s") is not None:
                 s = int(value.group("s"))
             if value.group("d") == "pm" and 0 < h < 12:
                 h += 12
@@ -3874,7 +3881,7 @@ class IS_DATE(Validator):
             (y, m, d, hh, mm, ss, t0, t1, t2) = time.strptime(value, str(self.format))
             value = datetime.date(y, m, d)
             return value
-        except:
+        except (ValueError, TypeError):
             self.extremes.update(IS_DATETIME.nice(str(self.format)))
             raise ValidationError(self.translator(self.error_message) % self.extremes)
 
@@ -3946,12 +3953,12 @@ class IS_DATETIME(Validator):
             (y, m, d, hh, mm, ss, t0, t1, t2) = time.strptime(value, str(self.format))
             value = datetime.datetime(y, m, d, hh, mm, ss)
             if self.timezone is not None:
-                # TODO: https://github.com/web2py/web2py/issues/1094 (temporary solution)
+                # Tolerate naive datetimes with an explicit timezone arg.
                 value = (
                     self.timezone.localize(value).astimezone(utc).replace(tzinfo=None)
                 )
             return value
-        except:
+        except (ValueError, TypeError):
             self.extremes.update(IS_DATETIME.nice(str(self.format)))
             raise ValidationError(self.translator(self.error_message) % self.extremes)
 
@@ -4074,6 +4081,21 @@ class IS_DATETIME_IN_RANGE(IS_DATETIME):
 
 
 class IS_LIST_OF(Validator):
+    """
+    Validate that ``value`` is a list whose items each pass ``other``.
+
+    Args:
+        other: a Validator (or list of validators) applied to every item.
+        minimum: minimum required list length (None = no minimum).
+        maximum: maximum allowed list length (None = no maximum).
+        error_message: message returned on JSON-parse failure or
+            length-bound violation.
+
+    Strings starting with ``[`` and ending with ``]`` are JSON-parsed
+    before validation. Items that fail their inner validator collect
+    individual errors.
+    """
+
     def __init__(self, other=None, minimum=None, maximum=None, error_message=None):
         self.other = other
         self.minimum = minimum
@@ -4642,7 +4664,7 @@ upperset = frozenset(b"ABCDEFGHIJKLMNOPQRSTUVWXYZ")
 numberset = frozenset(b"0123456789")
 sym1set = frozenset(b"!@#$%^&*() ")
 sym2set = frozenset(b"~`-_=+[]{}\\|;:'\",.<>?/")
-otherset = frozenset(b"".join(chr(x) if PY2 else chr(x).encode() for x in range(256)))
+otherset = frozenset(b"".join(chr(x).encode() for x in range(256)))
 
 
 def calc_entropy(string):
@@ -5036,7 +5058,7 @@ class IS_FILE(Validator):
     def validate(self, value, record_id=None):
         try:
             string = value.filename
-        except:
+        except AttributeError:
             raise ValidationError(self.translator(self.error_message))
         if self.case == 1:
             string = string.lower()
@@ -5120,7 +5142,7 @@ class IS_UPLOAD_FILENAME(Validator):
     def validate(self, value, record_id=None):
         try:
             string = value.filename
-        except:
+        except AttributeError:
             raise ValidationError(self.translator(self.error_message))
         if self.case == 1:
             string = string.lower()
