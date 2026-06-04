@@ -17,6 +17,21 @@ jobs:
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
 
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: pydal_test
+          POSTGRES_PASSWORD: pydal_test
+          POSTGRES_DB: pydal_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v2
       - name: Set up Python ${{ matrix.python-version }}
@@ -29,6 +44,11 @@ jobs:
             python -m pip install --upgrade pip
             ls -l
             python -m pip install -e .[test]
-      - name: Test
+      - name: Test (SQLite)
+        run: |
+            python -m unittest tests
+      - name: Test (PostgreSQL)
+        env:
+          DB: postgres://pydal_test:pydal_test@localhost:5432/pydal_test
         run: |
             python -m unittest tests

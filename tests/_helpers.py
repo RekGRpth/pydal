@@ -1,4 +1,5 @@
 from pydal import DAL
+from pydal.backend_base import BaseAdapter
 
 from ._adapt import DEFAULT_URI, drop
 from ._compat import unittest
@@ -25,3 +26,6 @@ class DALtest(unittest.TestCase):
                 drop(db[table])
             db.close()
         self._connections = []
+        # Reset the thread-local folder so a failed test with folder= set
+        # cannot contaminate subsequent tests.
+        BaseAdapter.set_folder("")

@@ -574,6 +574,7 @@ def set_to_update(s, op_values: Sequence) -> ast.Update:
         sets=sets,
         where=to_ast(query) if query else None,
         sqlsafe=sqlsafe,
+        sqlshortref=table.sql_shortref,
     )
 
 
@@ -595,6 +596,7 @@ def set_to_delete(s) -> ast.Delete:
         table=table._dalname,
         where=to_ast(query) if query else None,
         sqlsafe=sqlsafe,
+        sqlshortref=table.sql_shortref,
     )
 
 

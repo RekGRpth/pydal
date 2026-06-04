@@ -4,16 +4,25 @@
 """Unit tests for scheduler.py"""
 
 import datetime
+import sys
 import tempfile
 import time
 
 from pydal import DAL
+from pydal.backend_base import BaseAdapter
 from pydal.tools.scheduler import Scheduler, delta, now
 
 from ._compat import unittest
 
 
 class TestScheduler(unittest.TestCase):
+    def tearDown(self):
+        # The test creates a DAL with folder= a tempdir that is then
+        # deleted; reset the thread-local folder so it cannot poison
+        # subsequent tests.
+        BaseAdapter.set_folder("")
+
+    @unittest.skipIf(sys.platform == "win32", "signal.SIGCHLD is not available on Windows")
     def test_scheduler(self):
         completed_tasks = []
 
@@ -61,3 +70,4 @@ class TestScheduler(unittest.TestCase):
             self.assertEqual(db(db.task_run.status == "failed").count(), 1)
             # for run in db(db.task_run).select():
             #     print(run.name, run.status, run.log)
+            db.close()

@@ -209,6 +209,21 @@ class SQLCompiler:
             self._ctx = None
         return ParamSQL(sql, ctx.params) if ctx is not None else sql
 
+    def _emit_limitby(self, n: ast.Select, dst: str):
+        """Return ``(dst, limit_clause, offset_clause)`` for the limit/offset part.
+
+        The default emits ANSI ``LIMIT N OFFSET M``. Subclasses override
+        this to emit backend-specific syntax (e.g. ``SELECT TOP N`` for MSSQL)
+        by modifying ``dst`` and/or returning non-empty limit/offset strings.
+        Raise ``NotImplementedError`` to fall back to the legacy dialect path.
+        """
+        limit = offset = ""
+        if n.limit:
+            lmin, lmax = n.limit
+            limit = " LIMIT %i" % (lmax - lmin)
+            offset = " OFFSET %i" % lmin
+        return dst, limit, offset
+
     def _compile_select_body(self, n: ast.Select) -> str:
         # IMPORTANT: visits happen in SQL-position order. Positional ``?``
         # placeholders bind to params in the order they appear in the
@@ -299,12 +314,9 @@ class SQLCompiler:
             order = ""
             if n.orderby:
                 order = " ORDER BY %s" % ", ".join(self.visit(o) for o in n.orderby)
-            # LIMIT / OFFSET (always inline)
-            limit = offset = ""
-            if n.limit:
-                lmin, lmax = n.limit
-                limit = " LIMIT %i" % (lmax - lmin)
-                offset = " OFFSET %i" % lmin
+            # LIMIT / OFFSET — delegated to _emit_limitby so subclasses
+            # (e.g. MSSQLCompiler) can replace ANSI LIMIT with TOP/FETCH.
+            dst, limit, offset = self._emit_limitby(n, dst)
             # FOR UPDATE
             upd = " FOR UPDATE" if n.for_update else ""
             return "%sSELECT%s %s FROM %s%s%s%s%s%s%s%s;" % (
@@ -404,11 +416,16 @@ class SQLCompiler:
                 for col, val in n.sets
             )
             whr = " WHERE %s" % self.visit(n.where) if n.where is not None else ""
-            sql = "UPDATE %s SET %s%s;" % (table, sets, whr)
+            sql = self._render_update(n, table, sets, whr)
         finally:
             self._scope_stack.pop()
             self._ctx = None
         return ParamSQL(sql, ctx.params) if ctx is not None else sql
+
+    def _render_update(self, n: ast.Update, table: str, sets: str, whr: str) -> str:
+        """Assemble the final UPDATE statement. Subclasses override to emit
+        backend-specific shapes (e.g. MSSQL's ``UPDATE alias SET ... FROM table``)."""
+        return "UPDATE %s SET %s%s;" % (table, sets, whr)
 
     def compile_delete(self, n: ast.Delete):
         """Compile a ``Delete`` AST node into ``DELETE FROM ... WHERE ...;`` SQL."""
@@ -417,11 +434,16 @@ class SQLCompiler:
         try:
             table = n.sqlsafe if n.sqlsafe is not None else self._writing_alias(n.table)
             whr = " WHERE %s" % self.visit(n.where) if n.where is not None else ""
-            sql = "DELETE FROM %s%s;" % (table, whr)
+            sql = self._render_delete(n, table, whr)
         finally:
             self._scope_stack.pop()
             self._ctx = None
         return ParamSQL(sql, ctx.params) if ctx is not None else sql
+
+    def _render_delete(self, n: ast.Delete, table: str, whr: str) -> str:
+        """Assemble the final DELETE statement. Subclasses override to emit
+        backend-specific shapes (e.g. MSSQL's ``DELETE alias FROM table``)."""
+        return "DELETE FROM %s%s;" % (table, whr)
 
     def compile_count(self, n: ast.Count):
         """Compile a Count node into ``SELECT COUNT(...) FROM ...;``."""
@@ -790,19 +812,37 @@ class SQLCompiler:
         or a non-Literal expression (rendered as-is). For ILIKE we also
         lowercase the rendered second string and wrap the first in LOWER.
         """
-        if isinstance(r, ast.Literal):
-            rendered = self._represent(r.value, r.type or "string")
-            if lowered_left:
-                rendered = str(rendered).lower()
-            if escape is None:
-                escape = "\\"
-                rendered = str(rendered).replace(escape, escape * 2)
-        else:
-            rendered = self.visit(r)
-            if escape is None:
-                escape = "\\"
-        left = ("LOWER(%s)" % self.visit(l)) if lowered_left else self.visit(l)
+        # When no explicit escape char is given, default to backslash and
+        # (for literals) double any backslash in the pattern itself.
+        double = escape is None
+        if escape is None:
+            escape = "\\"
+        rendered = self._render_like_right(r, lowered_left, escape if double else None)
+        left = self._render_like_left(l, lowered_left)
         return "(%s LIKE %s ESCAPE '%s')" % (left, rendered, escape)
+
+    def _render_like_left(self, l: ast.Node, lowered_left: bool) -> str:
+        """Render the left-hand operand of a LIKE. Subclasses override to
+        inject backend-specific casts (e.g. Postgres ``::text``)."""
+        rendered = self.visit(l)
+        return ("LOWER(%s)" % rendered) if lowered_left else rendered
+
+    def _render_like_right(self, r: ast.Node, lowered_left: bool, escape_to_double):
+        """Render the right-hand operand (pattern) of a LIKE. Subclasses
+        override to fix up backend-specific quirks (e.g. MSSQL restores the
+        uppercase ``N`` prefix that ILIKE lowercasing would corrupt).
+
+        ``escape_to_double`` is the escape char whose occurrences must be
+        doubled in a *literal* pattern (``None`` when an explicit ESCAPE was
+        supplied, so the pattern is taken verbatim)."""
+        if isinstance(r, ast.Literal):
+            rendered = str(self._represent(r.value, r.type or "string"))
+            if lowered_left:
+                rendered = rendered.lower()
+            if escape_to_double is not None:
+                rendered = rendered.replace(escape_to_double, escape_to_double * 2)
+            return rendered
+        return self.visit(r)
 
     def op_like(self, l, r, opts):
         """Render ``(left LIKE right ESCAPE '...')`` — case-sensitive match."""

@@ -5,8 +5,9 @@ import tempfile
 from pydal import DAL, Field
 # integer_types removed; use int
 
-from ._adapt import DEFAULT_URI, IS_IMAP, IS_NOSQL, drop
+from ._adapt import IS_IMAP, IS_NOSQL
 from ._compat import unittest
+from ._helpers import DALtest
 
 long = int
 
@@ -47,9 +48,9 @@ class IS_INT_IN_RANGE(object):
 
 
 @unittest.skipIf(IS_IMAP, "TODO: IMAP test")
-class TestValidateAndInsert(unittest.TestCase):
+class TestValidateAndInsert(DALtest):
     def testRun(self):
-        db = DAL(DEFAULT_URI, check_reserved=["all"])
+        db = self.connect()
         db.define_table(
             "val_and_insert",
             Field("aa"),
@@ -71,11 +72,9 @@ class TestValidateAndInsert(unittest.TestCase):
         self.assertEqual(rtn.get("id"), None)
         # an error message should be in rtn.errors.bb
         self.assertNotEqual(rtn["errors"]["bb"], None)
-        # cleanup table
-        drop(db.val_and_insert)
 
     def testApiUpload(self):
-        db = DAL(DEFAULT_URI, check_reserved=["all"])
+        db = self.connect()
         with tempfile.TemporaryDirectory() as tempdir:
             db.define_table(
                 "thing",
@@ -106,9 +105,9 @@ class TestValidateAndInsert(unittest.TestCase):
 
 
 @unittest.skipIf(IS_IMAP, "TODO: IMAP test")
-class TestValidateUpdateInsert(unittest.TestCase):
+class TestValidateUpdateInsert(DALtest):
     def testRun(self):
-        db = DAL(DEFAULT_URI, check_reserved=["all"])
+        db = self.connect()
         t1 = db.define_table(
             "t1", Field("int_level", "integer", requires=IS_INT_IN_RANGE(1, 5))
         )
@@ -123,5 +122,3 @@ class TestValidateUpdateInsert(unittest.TestCase):
         self.assertEqual(db(t1.int_level == 1).count(), 0)
         self.assertEqual(db(t1.int_level == 6).count(), 0)
         self.assertEqual(db(t1.int_level == 2).count(), 1)
-        drop(db.t1)
-        return

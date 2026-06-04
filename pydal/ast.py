@@ -320,6 +320,10 @@ class Update(Node):
     sets: Tuple[Tuple[str, Node], ...]
     where: Optional[Node] = None
     sqlsafe: Optional[str] = None
+    # The table's ``sql_shortref`` (alias name when aliased, else rname).
+    # Used by backends whose aliased UPDATE/DELETE name the alias in the
+    # leading clause and the full ref in a trailing FROM (e.g. MSSQL).
+    sqlshortref: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -329,6 +333,7 @@ class Delete(Node):
     table: str
     where: Optional[Node] = None
     sqlsafe: Optional[str] = None
+    sqlshortref: Optional[str] = None
 
 
 @dataclass(frozen=True)

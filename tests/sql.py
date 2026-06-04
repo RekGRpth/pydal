@@ -565,6 +565,21 @@ class TestSelect(DALtest):
         db.tt.insert(aa=l)
         self.assertEqual(db(db.tt).select("tt.aa").first()[db.tt.aa], l)
 
+    def testListStringSpecialChars(self):
+        """list:string elements with commas, quotes, braces, backslashes survive a round-trip."""
+        db = self.connect()
+        db.define_table("tt", Field("aa", "list:string"))
+        tricky = [
+            "comma, separated",
+            'double"quote',
+            "{brace}",
+            "back\\slash",
+            "it's a quote",
+            "NULL",
+        ]
+        db.tt.insert(aa=tricky)
+        self.assertEqual(db(db.tt).select(db.tt.aa).first()[db.tt.aa], tricky)
+
     def testListReference(self):
         db = self.connect()
         db.define_table("t0", Field("aa", "string"))
@@ -3553,6 +3568,33 @@ class TestLazy(DALtest):
             db.tt.insert(value=1)
         row = db(db.tt).select("value").first()
         self.assertEqual(row.value, 1)
+
+    def testSelfReferenceMigration(self):
+        # Simulates web2py auth.define_tables(signature=True):
+        # auth_user has created_by/modified_by self-references
+        # MSSQL rejects CASCADE on self-referential FKs (multiple cascade paths)
+        ondelete = "NO ACTION" if IS_MSSQL else "CASCADE"
+        db = self.connect(check_reserved=None, lazy_tables=True)
+        db.define_table(
+            "auth_user",
+            Field("name"),
+            Field("created_by", "reference auth_user", ondelete=ondelete),
+            Field("modified_by", "reference auth_user", ondelete=ondelete),
+            migrate=".lazy_auth_user.table",
+        )
+        db.define_table(
+            "auth_event",
+            Field("description"),
+            Field("origin", "reference auth_user"),
+            migrate=".lazy_auth_event.table",
+        )
+        # Access auth_event FIRST — auth_user is still in _LAZY_TABLES.
+        # auth_event's migration hits db["auth_user"] in the migrator,
+        # which must lazily migrate auth_user (with its self-references)
+        # before auth_event's migration can complete.
+        db.auth_event.insert(description="login")
+        self.assertEqual(db(db.auth_event).count(), 1)
+        self.assertEqual(db(db.auth_user).count(), 0)
 
 
 class TestRedefine(unittest.TestCase):

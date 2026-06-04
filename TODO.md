@@ -44,17 +44,40 @@ what (small) corners remain.
   legacy `Select` bridging.
 - `set.subselect(..., correlated=False)` works directly now.
 
+### 5. MSSQL `limitby` — done
+
+- `SQLCompiler._emit_limitby(n, dst)` hook added; default emits ANSI
+  `LIMIT`/`OFFSET`.
+- `pydal/compilers/mssql.py` adds `MSSQLCompiler` (`mssql`, `mssqln`),
+  `MSSQL3Compiler` (`mssql3`, `mssql3n`) and `MSSQL4Compiler`
+  (`mssql4`, `mssql4n`), each overriding `_emit_limitby` to emit
+  `TOP` / `OFFSET … FETCH NEXT` as appropriate.
+- Removes the `self.compiler = None` workaround that previously forced
+  all MSSQL queries through the legacy dialect path.
+
+### 6. Postgres backend verified + `LIKE` on non-text fields — done
+
+- The full suite now runs against PostgreSQL (Docker, CI service in
+  `.github/workflows/run_test.yaml`) in addition to SQLite.
+- `pydal/compilers/postgres.py` adds `PostgresCompiler`, overriding
+  `_render_like_left` to cast non-text operands to `::text` — Postgres
+  has no implicit `integer → text` coercion for the `~~` (LIKE)
+  operator, so `field.like(...)` on an integer column needs the cast.
+  The legacy `PostgresDialect.like` got the same `::text` fix (the old
+  `CAST(x AS CHAR(n))` form was broken).
+- `SQLCompiler._render_like_left` hook extracted in the base so the
+  Postgres override is a one-liner.
+
 ---
 
 ## Remaining corners (low-priority)
 
 These are real but cheap-to-leave-alone:
 
-- **Tests against another backend.** Everything is verified on SQLite.
-  The dialect-swap from layer 1 works in principle; running the suite
-  against Postgres / MySQL would confirm and catch any bit-rotted
-  dialect-specific behavior (`postgre.py` `regexp` uses `~`, MSSQL's
-  `limitby` rewrite, etc.).
+- **Tests against MySQL / other backends.** SQLite and PostgreSQL are
+  both verified (PostgreSQL runs in CI). Running the suite against
+  MySQL would confirm the remaining dialect-specific behavior and catch
+  any bit-rotted overrides.
 - **Retire the legacy `_select_wcols` body.** Now that the AST path
   covers every shape exercised by the test suite, the 200-line legacy
   block in `adapters/base.py::_select_wcols` could shrink to just the

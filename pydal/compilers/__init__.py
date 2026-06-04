@@ -24,5 +24,7 @@ compilers: Dispatcher = Dispatcher("compiler")
 # side-effects so the registry is populated.
 from .sql import SQLCompiler       # noqa: E402, F401  (side-effect import)
 from .sqlite import SQLiteCompiler  # noqa: E402, F401  (side-effect import)
+from .mssql import MSSQLCompiler, MSSQL3Compiler, MSSQL4Compiler  # noqa: E402, F401
+from .postgres import PostgresCompiler  # noqa: E402, F401
 
-__all__ = ["SQLCompiler", "SQLiteCompiler", "compilers"]
+__all__ = ["SQLCompiler", "SQLiteCompiler", "MSSQLCompiler", "MSSQL3Compiler", "MSSQL4Compiler", "PostgresCompiler", "compilers"]
