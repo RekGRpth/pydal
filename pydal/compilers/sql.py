@@ -19,6 +19,7 @@ from typing import Any, Callable, List, Optional, Tuple
 
 from .. import ast
 from ..backend_base import SQLAdapter
+from ..utils import to_unicode
 from . import compilers
 
 
@@ -571,6 +572,10 @@ class SQLCompiler:
 
         Mirrors the pydal representer's output, sans the SQL quoting:
 
+        * ``string`` / ``text`` / ``password`` -> ``to_unicode(value)``, so
+          non-str objects (lazy password hashes, numbers, ``Reference``,
+          i18n proxies) reach the driver as text exactly as the legacy
+          representer rendered them, rather than as unbindable objects
         * ``boolean`` -> ``true_token`` / ``false_token`` (``"T"``/``"F"`` by default)
         * ``date`` -> ``"YYYY-MM-DD"``
         * ``time`` -> ``"HH:MM:SS"`` (with truncation matching the legacy
@@ -578,6 +583,8 @@ class SQLCompiler:
         * ``datetime`` -> ``"YYYY-MM-DD<sep>HH:MM:SS"``
         * everything else: passthrough (driver handles native types).
         """
+        if type_ in ("string", "text", "password"):
+            return to_unicode(value)
         if type_ == "boolean":
             if value and str(value)[:1].upper() not in "0F":
                 return self.true_token
