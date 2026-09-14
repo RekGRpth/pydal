@@ -2,11 +2,12 @@
 
 """Layer-5 oracle: parameterized SQL compilation and execution.
 
-The compiler defaults to inline mode (byte-compatible with SQLDialect).
-These tests verify the opt-in parameterized mode produces well-formed
-SQL with placeholders, captures the right values, and round-trips
-through a real sqlite cursor when wired via ParamSQL.
+The base compiler defaults to inline mode (byte-compatible with SQLDialect),
+while supported backends can enable parameters by default. These tests verify
+well-formed placeholders, captured values, and real database round-trips.
 """
+
+import datetime
 
 from pydal import DAL, Field
 from pydal.ast_translate import (
@@ -16,10 +17,11 @@ from pydal.ast_translate import (
     set_to_delete,
     table_to_insert,
 )
-from pydal.compilers import SQLiteCompiler
+from pydal.compilers import PostgresCompiler, PostgresPsycoCompiler, SQLiteCompiler
 from pydal.compilers.sql import ParamSQL
+from pydal.backends.postgres import Postgres
 
-from ._adapt import IS_NOSQL
+from ._adapt import DEFAULT_URI, IS_NOSQL, IS_POSTGRESQL
 from ._compat import unittest
 
 
@@ -38,6 +40,9 @@ class TestAstParamCompilation(unittest.TestCase):
             Field("age", "integer"),
             Field("score", "double"),
             Field("data", "json"),  # complex type — stays inlined for now
+            Field("tags", "list:string"),
+            Field("active", "boolean"),
+            Field("born", "date"),
         )
         cls.compiler = SQLiteCompiler(adapter=cls.db._adapter, parameterize=True)
 
@@ -56,6 +61,229 @@ class TestAstParamCompilation(unittest.TestCase):
         self.assertEqual(sql.params, ("alice",))
         self.assertIn("?", sql)
         self.assertNotIn("'alice'", sql)
+
+    def test_postgres_defaults_to_format_parameters(self):
+        compiler = PostgresPsycoCompiler(represent=self.db._adapter.represent)
+        sql = compiler.compile_select(
+            set_to_select(self.db(self.db.t.name == "alice"), (self.db.t.id,), {})
+        )
+        self.assertIsInstance(sql, ParamSQL)
+        self.assertEqual(sql.params, ("alice",))
+        self.assertIn("%s", sql)
+        self.assertNotIn("'alice'", sql)
+
+    def test_postgres_all_statement_entry_points_bind(self):
+        compiler = PostgresPsycoCompiler(represent=self.db._adapter.represent)
+        selected = self.db(self.db.t.name == "alice")
+        update_row = self.db.t._fields_and_values_for_update({"age": 31})
+        insert_row = self.db.t._fields_and_values_for_insert(
+            {"name": "alice", "age": 30}
+        )
+        statements = (
+            compiler.compile_select(
+                set_to_select(selected, (self.db.t.id,), {})
+            ),
+            compiler.compile_count(set_to_count(selected)),
+            compiler.compile_update(set_to_update(selected, update_row.op_values())),
+            compiler.compile_delete(set_to_delete(selected)),
+            compiler.compile_insert(
+                table_to_insert(self.db.t, insert_row.op_values())
+            ),
+        )
+        for sql in statements:
+            self.assertIsInstance(sql, ParamSQL)
+            self.assertIn("%s", sql)
+            self.assertTrue(sql.params)
+
+    def test_postgres_insert_retains_params_and_returning(self):
+        compiler = PostgresPsycoCompiler(adapter=self.db._adapter)
+        row = self.db.t._fields_and_values_for_insert(
+            {"name": "alice", "age": 30}
+        )
+        sql = compiler.compile_insert(table_to_insert(self.db.t, row.op_values()))
+        self.assertIsInstance(sql, ParamSQL)
+        self.assertCountEqual(sql.params, ("alice", 30))
+        self.assertEqual(sql.count("%s"), 2)
+        self.assertTrue(sql.endswith(' RETURNING "id";'))
+
+        adapter = object.__new__(Postgres)
+        adapter.compiler = compiler
+        Postgres._insert(adapter, self.db.t, row.op_values())
+        self.assertEqual(adapter._last_insert, (self.db.t.id, 1))
+
+    def test_postgres_percent_values_and_complex_literals_are_safe(self):
+        compiler = PostgresPsycoCompiler(represent=self.db._adapter.represent)
+        row = self.db.t._fields_and_values_for_insert(
+            {
+                "name": "50% complete %s",
+                "data": {"progress": "100%", "token": "%s"},
+                "tags": ["20%", "%s"],
+            }
+        )
+        sql = compiler.compile_insert(table_to_insert(self.db.t, row.op_values()))
+        self.assertEqual(sql.params, ("50% complete %s",))
+        self.assertEqual(sql.replace("%%", "").count("%s"), 1)
+        self.assertIn("100%%", sql)
+        self.assertIn("%%s", sql)
+
+    def test_postgres_typed_values_and_in_list_bind(self):
+        compiler = PostgresPsycoCompiler(represent=self.db._adapter.represent)
+        query = (
+            self.db.t.active == True  # noqa: E712
+        ) & (self.db.t.born == datetime.date(2024, 1, 15)) & self.db.t.age.belongs(
+            [20, 30]
+        )
+        sql = compiler.compile_select(
+            set_to_select(self.db(query), (self.db.t.id,), {})
+        )
+        self.assertEqual(sql.params, ("T", "2024-01-15", 20, 30))
+        self.assertEqual(sql.count("%s"), 4)
+
+    def test_postgres_id_and_reference_values_bind(self):
+        db = DAL("sqlite:memory")
+        try:
+            db.define_table("parent", Field("name"))
+            db.define_table("child", Field("parent_id", "reference parent"))
+            compiler = PostgresPsycoCompiler(adapter=db._adapter)
+            sql = compiler.compile_select(
+                set_to_select(
+                    db(
+                        (db.child.id == 7)
+                        & (db.child.parent_id == 3)
+                    ),
+                    (db.child.id,),
+                    {},
+                )
+            )
+            self.assertEqual(sql.params, (7, 3))
+            self.assertEqual(sql.count("%s"), 2)
+        finally:
+            db.close()
+
+    def test_postgres_custom_key_reference_uses_target_type(self):
+        db = DAL("sqlite:memory")
+        try:
+            db.define_table("keyed", Field("code"), primarykey=["code"])
+            db.define_table(
+                "linked",
+                Field("keyed_code", "reference keyed.code"),
+            )
+            compiler = PostgresPsycoCompiler(adapter=db._adapter)
+            sql = compiler.compile_select(
+                set_to_select(
+                    db(db.linked.keyed_code == "alpha"),
+                    (db.linked.keyed_code,),
+                    {},
+                )
+            )
+            self.assertEqual(sql.params, ("alpha",))
+            sql = compiler.compile_select(
+                set_to_select(
+                    db(db.linked.keyed_code == 123),
+                    (db.linked.keyed_code,),
+                    {},
+                )
+            )
+            self.assertEqual(sql.params, ("123",))
+        finally:
+            db.close()
+
+    def test_postgres_string_field_coerces_boolean_to_text(self):
+        compiler = PostgresPsycoCompiler(represent=self.db._adapter.represent)
+        sql = compiler.compile_select(
+            set_to_select(
+                self.db(self.db.t.name == True),  # noqa: E712
+                (self.db.t.id,),
+                {},
+            )
+        )
+        self.assertEqual(sql.params, ("True",))
+
+    def test_postgres_pattern_helpers_bind_transformed_values(self):
+        compiler = PostgresPsycoCompiler(represent=self.db._adapter.represent)
+        expressions = (
+            (self.db.t.name.like(r"A\%"), r"A\\%"),
+            (self.db.t.name.ilike("A%"), "a%"),
+            (self.db.t.name.startswith("a%b"), r"a\%b%"),
+            (self.db.t.name.endswith("a_b"), r"%a\_b"),
+            (self.db.t.name.contains("a%b"), r"%a\%b%"),
+        )
+        for expression, expected in expressions:
+            with self.subTest(expression=str(expression)):
+                sql = compiler.compile_select(
+                    set_to_select(self.db(expression), (self.db.t.id,), {})
+                )
+                self.assertIsInstance(sql, ParamSQL)
+                self.assertEqual(sql.params, (expected,))
+                self.assertEqual(sql.count("%s"), 1)
+
+    def test_postgres_pattern_bind_order_follows_sql_order(self):
+        compiler = PostgresPsycoCompiler(represent=self.db._adapter.represent)
+        expressions = (
+            ("like", self.db.t.name.coalesce("fallback").like("a%"), ("fallback", "a%")),
+            ("ilike", self.db.t.name.coalesce("fallback").ilike("A%"), ("fallback", "a%")),
+            (
+                "contains",
+                self.db.t.name.coalesce("fallback").contains("a%b"),
+                ("fallback", r"%a\%b%"),
+            ),
+        )
+        for name, expression, expected in expressions:
+            with self.subTest(expression=name):
+                sql = compiler.compile_select(
+                    set_to_select(self.db(expression), (self.db.t.id,), {})
+                )
+                self.assertEqual(sql.params, expected)
+                self.assertLess(sql.index("%s"), sql.rindex("%s"))
+
+    def test_postgres_pattern_helpers_decode_bytes_and_keep_null(self):
+        compiler = PostgresPsycoCompiler(represent=self.db._adapter.represent)
+        expressions = (
+            ("bytes", self.db.t.name.ilike("Ä\\%".encode("utf-8")), ("ä\\\\%",)),
+            ("null", self.db.t.name.like(None), ()),
+        )
+        for label, expression, expected in expressions:
+            with self.subTest(expression=label):
+                sql = compiler.compile_select(
+                    set_to_select(self.db(expression), (self.db.t.id,), {})
+                )
+                if label == "null":
+                    self.assertEqual(sql.params, ())
+                    self.assertIn("LIKE NULL", sql)
+                else:
+                    self.assertEqual(sql.params, expected)
+
+    def test_postgres_case_branch_literals_bind(self):
+        compiler = PostgresPsycoCompiler(represent=self.db._adapter.represent)
+        expression = (self.db.t.age > 0).case("positive", "other")
+        sql = compiler.compile_select(
+            set_to_select(self.db(self.db.t.id > 0), (expression,), {})
+        )
+        self.assertEqual(sql.params, (0, "positive", "other", 0))
+        self.assertEqual(sql.count("%s"), 4)
+
+    def test_set_select_inspection_remains_inline(self):
+        compiler = PostgresPsycoCompiler(represent=self.db._adapter.represent)
+        original = self.db._adapter.compiler
+        self.db._adapter.compiler = compiler
+        try:
+            sql = self.db(self.db.t.name == "50%")._select(self.db.t.id)
+        finally:
+            self.db._adapter.compiler = original
+        self.assertIs(type(sql), str)
+        self.assertNotIsInstance(sql, ParamSQL)
+        self.assertIn("'50%'", sql)
+        self.assertTrue(compiler.parameterize)
+
+    def test_jdbc_postgres_keeps_inline_compiler(self):
+        from pydal.backends.postgres import JDBCPostgres
+        from pydal.compilers import compilers
+
+        adapter = object.__new__(JDBCPostgres)
+        compiler = compilers.get_for(adapter)
+        self.assertIsInstance(compiler, PostgresCompiler)
+        self.assertNotIsInstance(compiler, PostgresPsycoCompiler)
+        self.assertFalse(compiler.parameterize)
 
     def test_integer_value_binds(self):
         sql = self._select_p(self.db(self.db.t.age > 5), (self.db.t.id,))
@@ -321,3 +549,129 @@ class TestAstParamTypedFilters(unittest.TestCase):
         self.assertEqual(str(row.start), "11:11:11")
         self.assertEqual(str(row["when"]), "2025-06-30 11:11:11")
         self.assertEqual(row.active, True)
+
+
+@unittest.skipUnless(IS_POSTGRESQL, "live PostgreSQL only")
+class TestPostgresParamExecution(unittest.TestCase):
+    """Round-trip PostgreSQL's default parameterized compiler path."""
+
+    tablename = "pydal_ast_param_roundtrip"
+
+    def setUp(self):
+        self.db = DAL(DEFAULT_URI, migrate=False)
+        self.db.executesql('DROP TABLE IF EXISTS "%s";' % self.tablename)
+        self.db.commit()
+        self.table = self.db.define_table(
+            self.tablename,
+            Field("name"),
+            Field("age", "integer"),
+            Field("active", "boolean"),
+            Field("born", "date"),
+            Field("created", "datetime"),
+            Field("payload", "json"),
+            Field("tags", "list:string"),
+            migrate=False,
+        )
+        ddl = self.db._adapter.migrator.create_table(self.table, migrate=False)
+        self.db._adapter.create_sequence_and_triggers(ddl, self.table)
+        self.db.commit()
+        self.commands = []
+        self._execute = self.db._adapter.driver_io.execute
+
+        def capture(sql, *args, **kwargs):
+            self.commands.append((str(sql), getattr(sql, "params", None)))
+            return self._execute(sql, *args, **kwargs)
+
+        self.db._adapter.driver_io.execute = capture
+
+    def tearDown(self):
+        self.db._adapter.driver_io.execute = self._execute
+        try:
+            self.db.rollback()
+            self.db.executesql('DROP TABLE IF EXISTS "%s";' % self.tablename)
+            self.db.commit()
+        finally:
+            self.db.close()
+
+    def _insert(self, name="50% complete %s", age=30, active=True):
+        return self.table.insert(
+            name=name,
+            age=age,
+            active=active,
+            born=datetime.date(2024, 1, 15),
+            created=datetime.datetime(2024, 1, 15, 12, 30, 45),
+            payload={"progress": "100%", "token": "%s"},
+            tags=["20%", "%s", "comma, value"],
+        )
+
+    def test_crud_and_returning_round_trip(self):
+        row_id = self._insert()
+        self.assertGreater(int(row_id), 0)
+        insert_sql, insert_params = self.commands[-1]
+        self.assertTrue(insert_sql.startswith("INSERT INTO "))
+        self.assertTrue(insert_sql.endswith(' RETURNING "id";'))
+        self.assertIn("%s", insert_sql)
+        self.assertIn("50% complete %s", insert_params)
+
+        rows = self.db(
+            (self.table.name == "50% complete %s")
+            & self.table.age.belongs([20, 30])
+        ).select()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows.first().id, int(row_id))
+        self.assertEqual(
+            self.db(self.table.born == datetime.date(2024, 1, 15)).count(), 1
+        )
+
+        updated = self.db(self.table.name == "50% complete %s").update(
+            name="75% complete", active=False
+        )
+        self.assertEqual(updated, 1)
+        row = self.db(self.table.name == "75% complete").select().first()
+        self.assertEqual((row.name, row.active), ("75% complete", False))
+
+        deleted = self.db(self.table.name == "75% complete").delete()
+        self.assertEqual(deleted, 1)
+        self.assertEqual(self.db(self.table.age > 0).count(), 0)
+
+        prefixes = tuple(command.split(" ", 1)[0] for command, _ in self.commands)
+        for prefix in ("INSERT", "SELECT", "UPDATE", "DELETE"):
+            self.assertIn(prefix, prefixes)
+        self.assertTrue(
+            any(command.startswith("SELECT COUNT(") for command, _ in self.commands)
+        )
+        self.assertTrue(
+            all(params is not None for command, params in self.commands if "%s" in command)
+        )
+
+    def test_typed_json_and_array_values_round_trip(self):
+        self._insert()
+        row = self.db(self.table.active == True).select().first()  # noqa: E712
+        self.assertEqual(row.born, datetime.date(2024, 1, 15))
+        self.assertEqual(row.created, datetime.datetime(2024, 1, 15, 12, 30, 45))
+        self.assertEqual(row.payload, {"progress": "100%", "token": "%s"})
+        self.assertEqual(row.tags, ["20%", "%s", "comma, value"])
+        insert_sql, insert_params = next(
+            (command, params)
+            for command, params in self.commands
+            if command.startswith("INSERT INTO ")
+        )
+        self.assertNotIn(self.table.payload.name, insert_params)
+        self.assertIn("100%%", insert_sql)
+        self.assertIn("%%s", insert_sql)
+
+    def test_value_varied_queries_reuse_command_text(self):
+        self._insert(name="alice", age=20)
+        self._insert(name="bob", age=30)
+        self.commands[:] = []
+        self.assertEqual(self.db(self.table.name == "alice").count(), 1)
+        self.assertEqual(self.db(self.table.name == "bob").count(), 1)
+        counts = [
+            (command, params)
+            for command, params in self.commands
+            if command.startswith("SELECT COUNT(")
+        ]
+        self.assertEqual(len(counts), 2)
+        self.assertEqual(counts[0][0], counts[1][0])
+        self.assertEqual(counts[0][1], ("alice",))
+        self.assertEqual(counts[1][1], ("bob",))
